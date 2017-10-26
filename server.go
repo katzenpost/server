@@ -309,8 +309,10 @@ func New(cfg *config.Config) (*Server, error) {
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
-	// Initialize the outgoing connection manager.
+	// Initialize the outgoing connection manager, and then start the PKI
+	// worker.
 	s.connector = newConnector(s)
+	s.pki.startWorker()
 
 	// Bring the listener(s) online.
 	s.listeners = make([]*listener, 0, len(s.cfg.Server.Addresses))

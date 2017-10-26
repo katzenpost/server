@@ -134,6 +134,11 @@ type pki struct {
 	haltCh chan interface{}
 }
 
+func (p *pki) startWorker() {
+	p.Add(1)
+	go p.worker()
+}
+
 func (p *pki) halt() {
 	close(p.haltCh)
 	p.Wait()
@@ -143,6 +148,10 @@ func (p *pki) worker() {
 	defer func() {
 		p.Done()
 	}()
+
+	// Note: The worker's start is delayed till after the Server's connector
+	// is initialized, so that force updating the outgoing connection table
+	// is guaranteed to work.
 
 	for {
 		select {
@@ -186,7 +195,6 @@ func (p *pki) docsForOutgoing() ([]*pkiCacheEntry, uint64) {
 
 	return p.docsForEpochs(epochs), now
 }
-
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
 	const (
@@ -349,8 +357,10 @@ func newPKI(s *Server) *pki {
 	p.log = s.newLogger("pki")
 	p.docs = make(map[uint64]*pkiCacheEntry)
 	p.haltCh = make(chan interface{})
-	p.Add(1)
 
-	go p.worker()
+	// Note: This does not start the worker immediately since the worker can
+	// make calls into the connector (on PKI updates), which is initialized
+	// after the pki object.
+
 	return p
 }
