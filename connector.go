@@ -117,7 +117,6 @@ func (co *connector) spawnNewConns() {
 		if _, ok := co.conns[id]; ok {
 			// There's a connection object for the peer already.
 			delete(newPeerMap, id)
-			continue
 		}
 	}
 	co.RUnlock()
