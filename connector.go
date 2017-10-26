@@ -34,7 +34,8 @@ type connector struct {
 
 	conns map[[constants.NodeIDLength]byte]*outgoingConn
 
-	haltCh chan interface{}
+	haltCh        chan interface{}
+	forceUpdateCh chan interface{}
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
@@ -47,6 +48,17 @@ func (co *connector) halt() {
 	// Close all outgoing connections.
 	close(co.closeAllCh)
 	co.closeAllWg.Wait()
+}
+
+func (co *connector) forceUpdate() {
+	// This deliberately uses a non-blocking write to a buffered channel so
+	// that the resweeps happen reliably.  Since the resweep is comprehensive,
+	// there's no benefit to queueing more than one resweep request, and the
+	// periodic timer serves as a fallback.
+	select {
+	case co.forceUpdateCh <- true:
+	default:
+	}
 }
 
 func (co *connector) dispatchPacket(pkt *packet) {
@@ -74,6 +86,8 @@ func (co *connector) worker() {
 		case <-co.haltCh:
 			co.log.Debugf("Terminating gracefully.")
 			return
+		case <-co.forceUpdateCh:
+			co.log.Debugf("Starting forced sweep.")
 		case <-co.timer.C:
 			co.log.Debugf("Starting periodic sweep.")
 		}
@@ -85,7 +99,7 @@ func (co *connector) worker() {
 		// and current time.
 		co.spawnNewConns()
 
-		co.log.Debugf("Done with periodic sweep.")
+		co.log.Debugf("Done with sweep.")
 		co.timer.Reset(resweepInterval)
 	}
 
@@ -154,6 +168,7 @@ func newConnector(s *Server) *connector {
 	co.timer = time.NewTimer(initialSpawnDelay)
 	co.conns = make(map[[constants.NodeIDLength]byte]*outgoingConn)
 	co.haltCh = make(chan interface{})
+	co.forceUpdateCh = make(chan interface{}, 1) // See forceUpdate().
 	co.closeAllCh = make(chan interface{})
 	co.Add(1)
 
