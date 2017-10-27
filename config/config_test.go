@@ -18,7 +18,6 @@ package config
 
 import (
 	"testing"
-	"sync"
 
 	"github.com/stretchr/testify/require"
 )
