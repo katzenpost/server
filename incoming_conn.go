@@ -212,6 +212,9 @@ func (c *incomingConn) worker() {
 			case *commands.GetConsensus:
 				c.log.Debugf("Received GetConsensus from peer.")
 				continue
+			default:
+				c.log.Errorf("failure: invalid command: %v", cmd)
+				return
 			}
 		}
 
