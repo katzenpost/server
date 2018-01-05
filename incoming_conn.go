@@ -205,12 +205,12 @@ func (c *incomingConn) worker() {
 		}
 
 		if c.fromClient {
-			// The only command specific to a client is RetreiveMessage.
-			if retrCmd, ok := rawCmd.(*commands.RetrieveMessage); ok {
-				if err := c.onRetrieveMessage(retrCmd); err != nil {
-					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
-					return
-				}
+			switch cmd := rawCmd.(type) {
+			case *commands.RetrieveMessage:
+				c.log.Debugf("Received RetrieveMessage from peer.")
+				continue
+			case *commands.GetConsensus:
+				c.log.Debugf("Received GetConsensus from peer.")
 				continue
 			}
 		}
