@@ -421,7 +421,7 @@ func (cfg *Config) FixupAndValidate() error {
 	cfg.Debug.applyDefaults()
 
 	var err error
-	cfg.Server.Identifier, err = idna.Lookup.ToASCII(cfg.Server.Identifier)
+	cfg.Server.Identifier, err = idna.ToASCII(cfg.Server.Identifier)
 	if err != nil {
 		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 	}
