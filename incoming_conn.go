@@ -205,7 +205,7 @@ func (c *incomingConn) worker() {
 		}
 
 		if c.fromClient {
-			switch cmd := rawCmd.(type) {
+			switch rawCmd.(type) {
 			case *commands.RetrieveMessage:
 				c.log.Debugf("Received RetrieveMessage from peer.")
 				continue
@@ -213,7 +213,7 @@ func (c *incomingConn) worker() {
 				c.log.Debugf("Received GetConsensus from peer.")
 				continue
 			default:
-				c.log.Errorf("failure: invalid command: %v", cmd)
+				c.log.Errorf("failure: invalid command")
 				return
 			}
 		}
