@@ -257,21 +257,16 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 }
 
 func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
-	var respCmd commands.Command
+	respCmd := &commands.Consensus{}
 	rawDoc, err := c.s.pki.getConsensus(cmd.Epoch)
-	if err != nil {
-		consensusCmd := &commands.Consensus{}
-		if err == errNotCached {
-			consensusCmd.ErrorCode = commands.ConsensusNotFound
-		} else if err == cpki.ErrNoDocument {
-			consensusCmd.ErrorCode = commands.ConsensusGone
-		}
-		respCmd = consensusCmd
-	} else {
-		respCmd = &commands.Consensus{
-			ErrorCode: commands.ConsensusOk,
-			Payload:   rawDoc,
-		}
+	switch err {
+	case nil:
+		respCmd.ErrorCode = commands.ConsensusOk
+		respCmd.Payload = rawDoc
+	case cpki.ErrNoDocument:
+		respCmd.ErrorCode = commands.ConsensusGone
+	default: // Covers errNotCached
+		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 	return c.w.SendCommand(respCmd)
 }
