@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/incoming"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/server/internal/pki"
 	"github.com/katzenpost/server/internal/provider"
@@ -192,6 +193,8 @@ func (s *Server) halt() {
 // New returns a new Server instance parameterized with the specified
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
+	instrument.Init()
+
 	s := &Server{
 		cfg:        cfg,
 		fatalErrCh: make(chan error),
