@@ -35,10 +35,14 @@ type UserDB interface {
 	// public key is valid.
 	IsValid([]byte, *ecdh.PublicKey) bool
 
-	// Add adds the user identified by the username and public key
-	// to the database.  Existing users will have their public keys
-	// updated if specified, otherwise an error will be returned.
-	Add([]byte, *ecdh.PublicKey, bool) error
+	// GetIDKey returns the identity key of the user or nil if the
+	// user doesn't exist.
+	GetIDKey([]byte) (*ecdh.PublicKey, error)
+
+	// Add adds the user identified by the username, public link and
+	// identity key to the database. Existing users will have their public
+	// keys updated if specified, otherwise an error will be returned.
+	Add([]byte, *ecdh.PublicKey, *ecdh.PublicKey, bool) error
 
 	// Remove removes the user identified by the username from the database.
 	Remove([]byte) error

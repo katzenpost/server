@@ -30,6 +30,8 @@ import (
 
 const usersBucket = "users"
 
+var idKeyExtension = []byte("@identity")
+
 type boltUserDB struct {
 	sync.RWMutex
 
@@ -76,12 +78,30 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	return isValid
 }
 
-func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
+func (d *boltUserDB) GetIDKey(u []byte) (*ecdh.PublicKey, error) {
+	var idKey *ecdh.PublicKey
+	err := d.db.View(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(usersBucket))
+
+		rawIDKey := bkt.Get(append(u, idKeyExtension...))
+		if rawIDKey == nil {
+			return nil
+		}
+		idKey.FromBytes(rawIDKey)
+		return nil
+	})
+	return idKey, err
+}
+
+func (d *boltUserDB) Add(u []byte, linkKey *ecdh.PublicKey, identityKey *ecdh.PublicKey, update bool) error {
 	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
-	if k == nil {
-		return fmt.Errorf("userdb: must provide a public key")
+	if linkKey == nil {
+		return fmt.Errorf("userdb: must provide a link key")
+	}
+	if identityKey == nil {
+		return fmt.Errorf("userdb: must provide a identity key")
 	}
 	if d.Exists(u) && !update {
 		return fmt.Errorf("userdb: user already exists")
@@ -92,7 +112,11 @@ func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
 		bkt := tx.Bucket([]byte(usersBucket))
 
 		// And add or update the user's entry.
-		return bkt.Put(u, k.Bytes())
+		err := bkt.Put(u, linkKey.Bytes())
+		if err != nil {
+			return err
+		}
+		return bkt.Put(append(u, idKeyExtension...), identityKey.Bytes())
 	})
 	if err == nil {
 		k := userToCacheKey(u)

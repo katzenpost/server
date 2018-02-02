@@ -70,6 +70,7 @@ type Provider interface {
 	Halt()
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
+	GetUserIDKey([]byte) (*ecdh.PublicKey, error)
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() map[string]map[string]interface{}
 }
