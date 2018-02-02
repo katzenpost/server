@@ -64,7 +64,32 @@ func (e *externAuth) Exists(u []byte) bool {
 	return e.doPost("exists", form)
 }
 
-func (e *externAuth) Add(u []byte, k *ecdh.PublicKey, update bool) error {
+func (e *externAuth) GetIDKey(u []byte) (*ecdh.PublicKey, error) {
+	data := url.Values{"user": {string(u)}}
+	uri := e.provider + "/getidkey"
+	rsp, err := http.PostForm(uri, data)
+	if err != nil {
+		return nil, errors.New("Can't reach the auth provider")
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != 200 {
+		return nil, nil
+	}
+
+	response := map[string]string{}
+	d := codec.NewDecoder(rsp.Body, jsonHandle)
+	err = d.Decode(&response)
+	rawIDKey, ok := response["getidkey"]
+	if err != nil || !ok {
+		return nil, nil
+	}
+
+	var identityKey ecdh.PublicKey
+	identityKey.FromString(rawIDKey)
+	return &identityKey, nil
+}
+
+func (e *externAuth) Add(u []byte, linkKey *ecdh.PublicKey, identityKey *ecdh.PublicKey, update bool) error {
 	return errCantModify
 }
 

@@ -107,6 +107,14 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	return isValid
 }
 
+func (p *provider) GetUserIDKey(user []byte) (*ecdh.PublicKey, error) {
+	ad, err := p.fixupUserNameCase(user)
+	if err != nil {
+		return nil, err
+	}
+	return p.userDB.GetIDKey(ad)
+}
+
 func (p *provider) OnPacket(pkt *packet.Packet) {
 	p.ch.In() <- pkt
 }
@@ -362,15 +370,20 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	defer p.Unlock()
 
 	sp := strings.Split(l, " ")
-	if len(sp) != 3 {
+	if len(sp) != 4 {
 		c.Log().Debugf("[ADD/UPDATE]_USER invalid syntax: '%v'", l)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
 	// Deserialize the public key.
-	var pubKey ecdh.PublicKey
-	if err := pubKey.FromString(sp[2]); err != nil {
-		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
+	var linkKey ecdh.PublicKey
+	if err := linkKey.FromString(sp[2]); err != nil {
+		c.Log().Errorf("[ADD/UPDATE]_USER invalid link key: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+	var identityKey ecdh.PublicKey
+	if err := identityKey.FromString(sp[3]); err != nil {
+		c.Log().Errorf("[ADD/UPDATE]_USER invalid identity key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
@@ -380,7 +393,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid user: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
-	if err = p.userDB.Add(u, &pubKey, isUpdate); err != nil {
+	if err = p.userDB.Add(u, &identityKey, &identityKey, isUpdate); err != nil {
 		c.Log().Errorf("Failed to add/update user: %v", err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}

@@ -223,9 +223,15 @@ func (d *pgxUserDB) getPublicKey(u []byte) *ecdh.PublicKey {
 	return pk
 }
 
-func (d *pgxUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
+func (d *pgxUserDB) Add(u []byte, k *ecdh.PublicKey, idKey *ecdh.PublicKey, update bool) error {
+	// TODO: idKey
 	_, err := d.pgx.pool.Exec(pgxTagUserSetPublicKey, u, k.Bytes(), update)
 	return err
+}
+
+func (d *pgxUserDB) GetIDKey([]byte) (*ecdh.PublicKey, error) {
+	// TODO
+	return nil, errors.New("Not implemented")
 }
 
 func (d *pgxUserDB) Remove(u []byte) error {
