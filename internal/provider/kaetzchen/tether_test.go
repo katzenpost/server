@@ -211,6 +211,9 @@ func TestTether(t *testing.T) {
 	userKey, err := ecdh.NewKeypair(rand.Reader)
 	require.NoError(err, "wtf")
 
+	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+
 	mockProvider := &mockProvider{
 		userName: "alice",
 		userKey:  userKey.PublicKey(),
@@ -219,6 +222,7 @@ func TestTether(t *testing.T) {
 		s: &mockServer{
 			logBackend: logBackend,
 			provider:   mockProvider,
+			linkKey:    linkKey,
 			cfg: &config.Config{
 				Server:     &config.Server{},
 				Logging:    &config.Logging{},
@@ -234,7 +238,7 @@ func TestTether(t *testing.T) {
 	tether, err := NewTether(cfg, goo)
 	require.NoError(err, "wtf")
 
-	authToken, err := genTetherAuthToken(idKey.ToECDH(), userKey.PublicKey())
+	authToken, err := genTetherAuthToken(userKey, linkKey.PublicKey())
 	require.NoError(err, "wtf")
 
 	req := tetherRequest{

@@ -154,7 +154,7 @@ func (k *kaetzchenTether) OnRequest(id uint64, payload []byte, hasSURB bool) ([]
 		}
 
 		// Authenticate client.
-		if !k.isAuthentic(req.AuthToken, sender, k.glue.Config().Debug.IdentityKey.ToECDH()) {
+		if !k.isAuthentic(req.AuthToken, sender, k.glue.LinkKey()) {
 			k.log.Errorf("Tether client %s failed to authenticate", req.User)
 			resp.StatusCode = tetherStatusAuthError
 			break
