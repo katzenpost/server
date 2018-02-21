@@ -41,7 +41,7 @@ const (
 	tetherStatusNoSpool     = 3
 	tetherStatusAuthError   = 4
 
-	tetherAuthTokenLength = 80
+	tetherAuthTokenLength = 32 + 32 + 16 // NoiseK pattern is -> e, es, ss
 )
 
 type tetherRequest struct {
@@ -66,6 +66,8 @@ type kaetzchenTether struct {
 
 	params     Parameters
 	jsonHandle codec.JsonHandle
+
+	userSequenceMap map[string]int
 }
 
 func (k *kaetzchenTether) Capability() string {
@@ -161,10 +163,40 @@ func (k *kaetzchenTether) OnRequest(id uint64, payload []byte, hasSURB bool) ([]
 		}
 
 		// Retrieve a message.
-		msg, _, remaining, err := k.glue.Provider().Spool().Get([]byte(req.User), true) // XXX fix me
-		if err != nil {
-			k.log.Errorf("KaetzenTether failure: %s", err)
+		sequence, ok := k.userSequenceMap[req.User]
+		msg := []byte{}
+		remaining := 0
+		if !ok {
+			msg, _, remaining, err = k.glue.Provider().Spool().Get([]byte(req.User), false)
+			if err != nil {
+				k.log.Errorf("KaetzenTether failure: %s", err)
+			}
+			resp.Sequence = 1
+			k.userSequenceMap[req.User] = 1
+		} else {
+			if req.Sequence == sequence {
+				_, _, _, err = k.glue.Provider().Spool().Get([]byte(req.User), true)
+				if err != nil {
+					k.log.Errorf("KaetzenTether failure: %s", err)
+				}
+				msg, _, remaining, err = k.glue.Provider().Spool().Get([]byte(req.User), false)
+				if err != nil {
+					k.log.Errorf("KaetzenTether failure: %s", err)
+				}
+				resp.Sequence = sequence + 1
+				k.userSequenceMap[req.User] = resp.Sequence
+			} else {
+				k.log.Debugf("KaetzenTether sequence mismatch for user %s", req.User)
+				delete(k.userSequenceMap, req.User)
+				msg, _, remaining, err = k.glue.Provider().Spool().Get([]byte(req.User), false)
+				if err != nil {
+					k.log.Errorf("KaetzenTether failure: %s", err)
+				}
+				resp.Sequence = 1
+				k.userSequenceMap[req.User] = resp.Sequence
+			}
 		}
+
 		resp.Payload = string(msg)
 		resp.QueueHint = remaining
 	case userdb.ErrNoSuchUser, userdb.ErrNoIdentity:
@@ -202,6 +234,7 @@ func NewTether(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	k.jsonHandle.Canonical = true
 	k.jsonHandle.ErrorIfNoField = true
 	k.params[ParameterEndpoint] = cfg.Endpoint
+	k.userSequenceMap = make(map[string]int)
 
 	return k, nil
 }

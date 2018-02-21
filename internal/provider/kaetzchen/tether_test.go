@@ -271,7 +271,7 @@ func TestTether(t *testing.T) {
 	require.Equal(resp.StatusCode, tetherStatusOk)
 	require.Equal(resp.Version, tetherVersion)
 	require.Equal(resp.QueueHint, 1)
-	require.Equal(resp.Sequence, req.Sequence)
+	require.Equal(resp.Sequence, req.Sequence+1)
 
 	t.Logf("response payload len is %d", len(resp.Payload))
 }
