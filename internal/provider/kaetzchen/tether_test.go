@@ -186,7 +186,7 @@ func genTetherAuthToken(senderPrivateKey *ecdh.PrivateKey, recipientPublicKey *e
 	if err != nil {
 		return "", err
 	}
-	plaintext := [32]byte{}
+	plaintext := [0]byte{}
 	ciphertext, _, _, err := hs.WriteMessage(nil, plaintext[:])
 	encoded := base64.StdEncoding.EncodeToString([]byte(ciphertext))
 	return encoded, err

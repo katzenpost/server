@@ -1,4 +1,4 @@
-// keyserver.go - Tether Kaetzchen.
+// tether.go - Tether Kaetzchen.
 // Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -38,10 +38,10 @@ const (
 	tetherStatusOk          = 0
 	tetherStatusSyntaxError = 1
 	tetherStatusNoIdentity  = 2
-	tetherStatusNoSpool     = 3
-	tetherStatusAuthError   = 4
+	tetherStatusAuthError   = 3
+	tetherStatusTempError   = 4
 
-	tetherAuthTokenLength = 32 + 32 + 16 // NoiseK pattern is -> e, es, ss
+	tetherAuthTokenLength = 32 + 16 // NoiseK pattern is -> e, es, ss
 )
 
 type tetherRequest struct {
@@ -114,8 +114,8 @@ func (k *kaetzchenTether) isAuthentic(authToken string, sender *ecdh.PublicKey, 
 		k.log.Errorf("isAuthentic base64 decode failure: %s", err)
 		return false
 	}
-	_, err = k.decryptToken(raw, sender, identityKey)
-	if err != nil {
+	plaintext, err := k.decryptToken(raw, sender, identityKey)
+	if plaintext != nil || err != nil {
 		k.log.Errorf("isAuthentic decrypt token failure: %s", err)
 		return false
 	}
@@ -151,7 +151,8 @@ func (k *kaetzchenTether) OnRequest(id uint64, payload []byte, hasSURB bool) ([]
 	case nil:
 		resp.StatusCode = tetherStatusOk
 		if k.glue.Provider().Spool() == nil {
-			resp.StatusCode = tetherStatusNoSpool
+			k.log.Error("impossible failure: Provider has nil spool reference")
+			resp.StatusCode = tetherStatusTempError
 			break
 		}
 
