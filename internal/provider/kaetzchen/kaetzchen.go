@@ -79,4 +79,5 @@ type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 var BuiltInCtors = map[string]BuiltInCtorFn{
 	loopCapability:      NewLoop,
 	keyserverCapability: NewKeyserver,
+	httpCapability:      NewHttp,
 }
