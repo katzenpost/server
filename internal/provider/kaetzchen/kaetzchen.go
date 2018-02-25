@@ -80,4 +80,5 @@ var BuiltInCtors = map[string]BuiltInCtorFn{
 	loopCapability:      NewLoop,
 	keyserverCapability: NewKeyserver,
 	tetherCapability:    NewTether,
+	httpCapability:      NewHttp,
 }
