@@ -155,6 +155,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 			return true
 		}
+		// is this a new account registration?
+		if provider.IsValidRegistration(creds) {
+			c.isRegistration = true
+			c.canSend = true
+			return true
+		}
 
 		// Connection is not from a client, so see if it's a mix.
 	}
@@ -302,9 +308,19 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
-		cmdStr := fmt.Sprintf("%T", rawCmd)
-		incomingConns.With(prometheus.Labels{"command": cmdStr}).Inc()
-
+		if c.isRegistration {
+			switch cmd := rawCmd.(type) {
+			case *commands.RegisterAccount:
+				if err := c.onRegisterAccount(cmd); err != nil {
+					c.log.Debugf("Failed to handle RegisterAccount: %v", err)
+					// The client failed to claim an identity and may try again.
+					continue
+				}
+			default:
+			}
+			// The client must now reauthenticate with new credentials.
+			return
+		}
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
@@ -368,6 +384,12 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
 	return c.w.SendCommand(respCmd)
+}
+
+func (c *incomingConn) onRegisterAccount(cmd *commands.RegisterAccount) error {
+	// check and see if the account already exists
+	// if not, add the username, public identity, and link keys provided
+
 }
 
 func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
