@@ -200,10 +200,12 @@ func (p *provider) worker() {
 			// can't be a SURB-Reply.
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				pkt.Dispose()
 			} else {
-				p.onToKaetzchen(pkt, dstKaetzchen)
+				// Note that we pass ownership of pkt to p.onToKaetzchen
+				// which will dispose of it when finished processing
+				go p.onToKaetzchen(pkt, dstKaetzchen)
 			}
-			pkt.Dispose()
 			continue
 		}
 
@@ -278,6 +280,7 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 }
 
 func (p *provider) onToKaetzchen(pkt *packet.Packet, dst kaetzchen.Kaetzchen) {
+	defer pkt.Dispose()
 	ct, surb, err := parseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
