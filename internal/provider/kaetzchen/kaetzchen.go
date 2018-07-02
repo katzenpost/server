@@ -267,6 +267,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 	}
 
 	// Start the workers.
+	// XXX use a new config parameter?
 	for i := 0; i < glue.Config().Debug.NumProviderWorkers; i++ {
 		kaetzchenWorker.Go(kaetzchenWorker.worker)
 	}
