@@ -148,9 +148,8 @@ func (k *KaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
 }
 
 func (k *KaetzchenWorker) worker() {
-	// XXX make a new config parameter?
-	// ProviderDelay * 3 is our max dwell time.
-	maxDwell := time.Duration(k.glue.Config().Debug.ProviderDelay*3) * time.Millisecond
+	// Kaetzchen delay is our max dwell time.
+	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
 	defer k.log.Debugf("Halting Kaetzchen worker.")
 
@@ -267,8 +266,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 	}
 
 	// Start the workers.
-	// XXX use a new config parameter?
-	for i := 0; i < glue.Config().Debug.NumProviderWorkers; i++ {
+	for i := 0; i < glue.Config().Debug.NumKaetzchenWorkers; i++ {
 		kaetzchenWorker.Go(kaetzchenWorker.worker)
 	}
 
