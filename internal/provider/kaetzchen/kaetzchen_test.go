@@ -17,6 +17,7 @@
 package kaetzchen
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -300,5 +301,5 @@ func TestKaetzchenWorker(t *testing.T) {
 	kaetzWorker.Halt()
 
 	// test previous timeout case
-	require.Equal(kaetzWorker.dropCounter, uint64(1))
+	require.Equal(atomic.LoadUint64(&kaetzWorker.dropCounter), uint64(1))
 }
