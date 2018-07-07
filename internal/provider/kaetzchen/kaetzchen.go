@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/core/monotime"
@@ -163,7 +164,7 @@ func (k *KaetzchenWorker) worker() {
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
-				k.dropCounter++
+				atomic.AddUint64(&k.dropCounter, uint64(1))
 				pkt.Dispose()
 				continue
 			}
