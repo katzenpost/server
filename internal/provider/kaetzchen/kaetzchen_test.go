@@ -18,6 +18,7 @@ package kaetzchen
 
 import (
 	"testing"
+	"time"
 
 	cConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -266,27 +267,38 @@ func TestKaetzchenWorker(t *testing.T) {
 	kaetzWorker.registerKaetzchen(mockService)
 
 	recipient := [sConstants.RecipientIDLength]byte{}
-	copy(recipient[:], []byte("loop"))
+	copy(recipient[:], []byte("test"))
 	require.True(kaetzWorker.IsKaetzchen(recipient))
 
 	pkiMap := kaetzWorker.KaetzchenForPKI()
-	_, ok := pkiMap["loop"]
+	_, ok := pkiMap["test"]
 	require.True(ok)
 
+	// timeout test case
 	payload := make([]byte, cConstants.PacketLength)
-	packet, err := packet.New(payload)
+	testPacket, err := packet.New(payload)
 	require.NoError(err)
-
-	recipient2 := [sConstants.RecipientIDLength]byte{}
-	copy(recipient2[:], []byte("test"))
-	require.True(kaetzWorker.IsKaetzchen(recipient2))
-
-	packet.Recipient = &commands.Recipient{
-		ID: recipient2,
+	testPacket.Recipient = &commands.Recipient{
+		ID: recipient,
 	}
-	packet.DispatchAt = monotime.Now()
-	packet.Payload = make([]byte, cConstants.ForwardPayloadLength)
+	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
+	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength)
+	kaetzWorker.OnKaetzchen(testPacket)
 
-	kaetzWorker.OnKaetzchen(packet)
+	// working test case
+	payload = make([]byte, cConstants.PacketLength)
+	testPacket, err = packet.New(payload)
+	require.NoError(err)
+	testPacket.Recipient = &commands.Recipient{
+		ID: recipient,
+	}
+	testPacket.DispatchAt = monotime.Now()
+	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength)
+
+	kaetzWorker.OnKaetzchen(testPacket)
 	<-mockService.receivedCh
+	kaetzWorker.Halt()
+
+	// test previous timeout case
+	require.Equal(kaetzWorker.dropCounter, uint64(1))
 }

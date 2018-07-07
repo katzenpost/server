@@ -96,6 +96,8 @@ type KaetzchenWorker struct {
 
 	ch        *channels.InfiniteChannel
 	kaetzchen map[[sConstants.RecipientIDLength]byte]Kaetzchen
+
+	dropCounter uint64
 }
 
 func (k *KaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
@@ -161,6 +163,7 @@ func (k *KaetzchenWorker) worker() {
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
+				k.dropCounter++
 				pkt.Dispose()
 				continue
 			}
