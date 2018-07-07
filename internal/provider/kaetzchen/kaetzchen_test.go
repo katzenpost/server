@@ -18,7 +18,6 @@ package kaetzchen
 
 import (
 	"testing"
-	"time"
 
 	cConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -186,6 +185,7 @@ func (g *mockGlue) Decoy() glue.Decoy {
 type MockKaetzchen struct {
 	capability string
 	parameters Parameters
+	receivedCh chan bool
 }
 
 func (m *MockKaetzchen) Capability() string {
@@ -197,6 +197,7 @@ func (m *MockKaetzchen) Parameters() Parameters {
 }
 
 func (m *MockKaetzchen) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
+	m.receivedCh <- true
 	return nil, nil
 }
 
@@ -255,10 +256,11 @@ func TestKaetzchenWorker(t *testing.T) {
 	require.NoError(err)
 
 	params := make(Parameters)
-	params[ParameterEndpoint] = "loop"
+	params[ParameterEndpoint] = "test"
 	mockService := &MockKaetzchen{
-		capability: "loop",
+		capability: "test",
 		parameters: params,
+		receivedCh: make(chan bool),
 	}
 
 	kaetzWorker.registerKaetzchen(mockService)
@@ -271,18 +273,20 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["loop"]
 	require.True(ok)
 
-	require.True(kaetzWorker.IsKaetzchen(recipient))
-
 	payload := make([]byte, cConstants.PacketLength)
 	packet, err := packet.New(payload)
 	require.NoError(err)
 
+	recipient2 := [sConstants.RecipientIDLength]byte{}
+	copy(recipient2[:], []byte("test"))
+	require.True(kaetzWorker.IsKaetzchen(recipient2))
+
 	packet.Recipient = &commands.Recipient{
-		ID: recipient,
+		ID: recipient2,
 	}
 	packet.DispatchAt = monotime.Now()
 	packet.Payload = make([]byte, cConstants.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(packet)
-	time.Sleep(3 * time.Second)
+	<-mockService.receivedCh
 }
