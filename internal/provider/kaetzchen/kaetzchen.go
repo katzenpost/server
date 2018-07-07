@@ -163,8 +163,8 @@ func (k *KaetzchenWorker) worker() {
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
-				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				atomic.AddUint64(&k.dropCounter, uint64(1))
+				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, atomic.LoadUint64(&k.dropCounter))
 				pkt.Dispose()
 				continue
 			}

@@ -298,8 +298,9 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	kaetzWorker.OnKaetzchen(testPacket)
 	<-mockService.receivedCh
-	kaetzWorker.Halt()
 
 	// test previous timeout case
 	require.Equal(atomic.LoadUint64(&kaetzWorker.dropCounter), uint64(1))
+
+	kaetzWorker.Halt()
 }
