@@ -180,6 +180,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		atomic.AddUint64(&k.dropCounter, uint64(1))
 		return
 	}
 

@@ -275,9 +275,20 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(ok)
 
-	// timeout test case
+	// invalid packet test case
 	payload := make([]byte, cConstants.PacketLength)
 	testPacket, err := packet.New(payload)
+	require.NoError(err)
+	testPacket.Recipient = &commands.Recipient{
+		ID: recipient,
+	}
+	testPacket.DispatchAt = monotime.Now()
+	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength-1) // off by one erroneous size
+	kaetzWorker.OnKaetzchen(testPacket)
+
+	// timeout test case
+	payload = make([]byte, cConstants.PacketLength)
+	testPacket, err = packet.New(payload)
 	require.NoError(err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
@@ -299,8 +310,9 @@ func TestKaetzchenWorker(t *testing.T) {
 	kaetzWorker.OnKaetzchen(testPacket)
 	<-mockService.receivedCh
 
-	// test previous timeout case
-	require.Equal(atomic.LoadUint64(&kaetzWorker.dropCounter), uint64(1))
+	// test that we dropped two packets from the timeout and
+	// invalid packet test casses
+	require.Equal(atomic.LoadUint64(&kaetzWorker.dropCounter), uint64(2))
 
 	kaetzWorker.Halt()
 }
