@@ -72,10 +72,6 @@ type Kaetzchen interface {
 	//  * NOT assume payload will be valid past the call to OnMessage.
 	//    Any contents that need to be preserved, MUST be copied out,
 	//    except if it is only used as a part of the response body.
-	//
-	//  * Return relatively quickly.  Kaetzchen are executed in the provider
-	//    worker context, and excessive processing time will adversely impact
-	//    provider performance.
 	OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error)
 
 	// Halt cleans up the agent prior to de-registration and teardown.
@@ -267,6 +263,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 
 	// Start the workers.
 	for i := 0; i < glue.Config().Debug.NumKaetzchenWorkers; i++ {
+		kaetzchenWorker.log.Noticef("Starting Kaetzchen worker: %d", i)
 		kaetzchenWorker.Go(kaetzchenWorker.worker)
 	}
 
