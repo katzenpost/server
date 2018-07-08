@@ -147,6 +147,14 @@ func (k *KaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
 	k.ch.In() <- pkt
 }
 
+func (k *KaetzchenWorker) getDropCounter() uint64 {
+	return atomic.LoadUint64(&k.dropCounter)
+}
+
+func (k *KaetzchenWorker) incrementDropCounter() uint64 {
+	return atomic.AddUint64(&k.dropCounter, uint64(1))
+}
+
 func (k *KaetzchenWorker) worker() {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -164,8 +172,8 @@ func (k *KaetzchenWorker) worker() {
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
-				atomic.AddUint64(&k.dropCounter, uint64(1))
-				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, atomic.LoadUint64(&k.dropCounter))
+				count := k.incrementDropCounter()
+				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				pkt.Dispose()
 				continue
 			}
@@ -181,7 +189,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
-		atomic.AddUint64(&k.dropCounter, uint64(1))
+		k.incrementDropCounter()
 		return
 	}
 
