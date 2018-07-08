@@ -17,7 +17,6 @@
 package kaetzchen
 
 import (
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -313,7 +312,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	// test that we dropped two packets from the timeout and
 	// invalid packet test casses
 	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
-	require.Equal(uint64(2), atomic.LoadUint64(&kaetzWorker.dropCounter))
+	require.Equal(uint64(2), kaetzWorker.getDropCounter())
 
 	kaetzWorker.Halt()
 }
