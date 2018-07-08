@@ -38,6 +38,7 @@ const (
 type currencyRequest struct {
 	Version int
 	Tx      string
+	Ticker  string
 }
 
 type kaetzchenCurrency struct {
@@ -62,7 +63,6 @@ func (k *kaetzchenCurrency) Parameters() Parameters {
 }
 
 func (k *kaetzchenCurrency) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
-
 	k.log.Debugf("Handling request: %v", id)
 
 	// Parse out the request payload.
@@ -76,14 +76,14 @@ func (k *kaetzchenCurrency) OnRequest(id uint64, payload []byte, hasSURB bool) (
 		k.log.Debugf("Failed to parse request: %v (invalid version: %v)", id, req.Version)
 		return nil, nil
 	}
-
-	go func() {
-		err := k.sendTransaction(req.Tx)
-		if err != nil {
-			k.log.Debug("failure to send Currency transaction")
-		}
-	}()
-
+	if req.Ticker != k.params[currencyTicker] {
+		k.log.Debugf("Failed to parse request: %v (currency ticker mismatch: %v)", id, req.Ticker)
+		return nil, nil
+	}
+	err := k.sendTransaction(req.Tx)
+	if err != nil {
+		k.log.Debug("Failed to send currency transaction request: %v (%v)", id, err)
+	}
 	return nil, nil
 }
 
@@ -93,11 +93,12 @@ func (k *kaetzchenCurrency) NextID() uint64 {
 
 func (k *kaetzchenCurrency) sendTransaction(txHex string) error {
 	k.log.Debug("sendTransaction")
+
 	// marshall new transaction blob
 	allowHighFees := true
 	cmd := btcjson.NewSendRawTransactionCmd(txHex, &allowHighFees)
-	id := k.NextID()
-	marshalledJSON, err := btcjson.MarshalCmd(id, cmd)
+	txId := k.NextID() // XXX todo: persist transaction ID to disk
+	marshalledJSON, err := btcjson.MarshalCmd(txId, cmd)
 	bodyReader := bytes.NewReader(marshalledJSON)
 
 	// create an http request
