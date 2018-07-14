@@ -191,7 +191,7 @@ func (p *provider) worker() {
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care of disposing of it.
+				// which will take care to dispose of it.
 				p.kaetzchenWorker.OnKaetzchen(pkt)
 			}
 			continue
