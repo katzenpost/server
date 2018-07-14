@@ -35,6 +35,8 @@ const (
 	currencyTicker     = "ticker"
 )
 
+var errInvalidCurrencyRequest = errors.New("kaetzchen/currency: invalid request")
+
 type currencyRequest struct {
 	Version int
 	Tx      string
@@ -63,6 +65,11 @@ func (k *kaetzchenCurrency) Parameters() Parameters {
 }
 
 func (k *kaetzchenCurrency) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
+	if hasSURB {
+		k.log.Debugf("Ignoring request: %v, erroneously contains a SURB.", id)
+		return nil, ErrNoResponse
+	}
+
 	k.log.Debugf("Handling request: %v", id)
 
 	// Parse out the request payload.
@@ -70,21 +77,25 @@ func (k *kaetzchenCurrency) OnRequest(id uint64, payload []byte, hasSURB bool) (
 	dec := codec.NewDecoderBytes(bytes.TrimRight(payload, "\x00"), &k.jsonHandle)
 	if err := dec.Decode(&req); err != nil {
 		k.log.Debugf("Failed to decode request: %v (%v)", id, err)
-		return nil, nil
+		return nil, errInvalidCurrencyRequest
 	}
+
+	// Sanity check the request.
 	if req.Version != currencyVersion {
 		k.log.Debugf("Failed to parse request: %v (invalid version: %v)", id, req.Version)
-		return nil, nil
+		return nil, errInvalidCurrencyRequest
 	}
 	if req.Ticker != k.params[currencyTicker] {
 		k.log.Debugf("Failed to parse request: %v (currency ticker mismatch: %v)", id, req.Ticker)
-		return nil, nil
+		return nil, errInvalidCurrencyRequest
 	}
+
+	// Send request to HTTP RPC.
 	err := k.sendTransaction(req.Tx)
 	if err != nil {
 		k.log.Debug("Failed to send currency transaction request: %v (%v)", id, err)
 	}
-	return nil, nil
+	return nil, ErrNoResponse
 }
 
 func (k *kaetzchenCurrency) NextID() uint64 {
@@ -124,6 +135,7 @@ func (k *kaetzchenCurrency) Halt() {
 
 // NewCurrency constructs a new Currency Kaetzchen instance, providing the
 // "currency" capability on the configured endpoint.
+// XXX todo: load last tx ID from disk
 func NewCurrency(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	var rpcUser string
 	var rpcPass string
