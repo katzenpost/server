@@ -257,7 +257,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	require.NoError(err)
 
 	params := make(Parameters)
-	params[ParameterEndpoint] = "test"
+	params[ParameterEndpoint] = "+test"
 	mockService := &MockKaetzchen{
 		capability: "test",
 		parameters: params,
@@ -267,7 +267,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	kaetzWorker.registerKaetzchen(mockService)
 
 	recipient := [sConstants.RecipientIDLength]byte{}
-	copy(recipient[:], []byte("test"))
+	copy(recipient[:], []byte("+test"))
 	require.True(kaetzWorker.IsKaetzchen(recipient))
 
 	pkiMap := kaetzWorker.KaetzchenForPKI()
