@@ -62,7 +62,8 @@ type provider struct {
 	userDB userdb.UserDB
 	spool  spool.Spool
 
-	kaetzchenWorker *kaetzchen.KaetzchenWorker
+	kaetzchenWorker       *kaetzchen.KaetzchenWorker
+	pluginKaetzchenWorker *kaetzchen.PluginKaetzchenWorker
 }
 
 func (p *provider) Halt() {
@@ -70,6 +71,7 @@ func (p *provider) Halt() {
 
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
+	p.pluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -112,7 +114,17 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 }
 
 func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
-	return p.kaetzchenWorker.KaetzchenForPKI()
+	map1 := p.kaetzchenWorker.KaetzchenForPKI()
+	map2 := p.pluginKaetzchenWorker.KaetzchenForPKI()
+	// merge sets, panic on duplicate
+	for k, v := range map2 {
+		_, ok := map1[k]
+		if ok {
+			panic("wtf")
+		}
+		map1[k] = v
+	}
+	return map1
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
@@ -193,6 +205,18 @@ func (p *provider) worker() {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
 				// which will take care to dispose of it.
 				p.kaetzchenWorker.OnKaetzchen(pkt)
+			}
+			continue
+		}
+
+		if p.pluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+			if pkt.IsSURBReply() {
+				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				pkt.Dispose()
+			} else {
+				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// which will take care to dispose of it.
+				p.pluginKaetzchenWorker.OnKaetzchen(pkt)
 			}
 			continue
 		}
