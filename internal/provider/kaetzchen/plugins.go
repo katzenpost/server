@@ -108,7 +108,7 @@ func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]b
 
 func (k *PluginKaetzchenWorker) killAllClients() {
 	for _, client := range k.clients {
-		client.Kill()
+		go client.Kill()
 	}
 }
 
