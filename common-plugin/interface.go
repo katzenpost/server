@@ -17,11 +17,12 @@
 package plugin
 
 import (
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
+	scontext "context"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/katzenpost/server/common-plugin/proto"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 // Handshake is a common handshake that is shared by plugin and host.
@@ -74,7 +75,7 @@ func (p *KaetzchenPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) 
 	return nil
 }
 
-func (p *KaetzchenPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+func (p *KaetzchenPlugin) GRPCClient(ctx scontext.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
 	return &GRPCClient{
 		client: proto.NewKaetzchenClient(c),
 	}, nil
