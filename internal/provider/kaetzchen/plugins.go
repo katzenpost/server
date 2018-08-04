@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	common "github.com/katzenpost/server/common-plugin"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
@@ -41,7 +42,7 @@ var KaetzchenService = "kaetzchen"
 
 // PluginMap is the map of plugins we can dispense.
 var PluginMap = map[string]plugin.Plugin{
-	KaetzchenService: &KaetzchenPlugin{},
+	KaetzchenService: &common.KaetzchenPlugin{},
 }
 
 // PluginKaetzchenWorker is similar to Kaetzchen worker but uses
@@ -58,6 +59,8 @@ type PluginKaetzchenWorker struct {
 	pluginChan map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
 
 	clients []*plugin.Client
+
+	forPKI map[string]map[string]interface{}
 }
 
 func (k *PluginKaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
@@ -69,7 +72,7 @@ func (k *PluginKaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient KaetzchenPluginInterface) {
+func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient common.KaetzchenPluginInterface) {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -109,7 +112,7 @@ func (k *PluginKaetzchenWorker) killAllClients() {
 	}
 }
 
-func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClient KaetzchenPluginInterface) {
+func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClient common.KaetzchenPluginInterface) {
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
@@ -152,14 +155,21 @@ func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClien
 	}
 }
 
+func (k *PluginKaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
+	if len(k.pluginChan) == 0 {
+		return nil
+	}
+	return k.forPKI
+}
+
 func (k *PluginKaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChan[recipient]
 	return ok
 }
 
-func (k *PluginKaetzchenWorker) launch(command string) (KaetzchenPluginInterface, *plugin.Client, error) {
+func (k *PluginKaetzchenWorker) launch(command string) (common.KaetzchenPluginInterface, *plugin.Client, error) {
 	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: Handshake,
+		HandshakeConfig: common.Handshake,
 		Plugins:         PluginMap,
 		Cmd:             exec.Command("sh", "-c", command),
 		AllowedProtocols: []plugin.Protocol{
@@ -179,7 +189,7 @@ func (k *PluginKaetzchenWorker) launch(command string) (KaetzchenPluginInterface
 		client.Kill()
 		return nil, nil, err
 	}
-	service, ok := raw.(KaetzchenPluginInterface)
+	service, ok := raw.(common.KaetzchenPluginInterface)
 	if !ok {
 		client.Kill()
 		return nil, nil, errors.New("type assertion failure for KaetzchenPluginInterface")
@@ -194,6 +204,7 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 		log:        glue.LogBackend().GetLogger("kaetzchen_worker"),
 		pluginChan: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
 		clients:    make([]*plugin.Client, 0),
+		forPKI:     make(map[string]map[string]interface{}),
 	}
 
 	capaMap := make(map[string]bool)
@@ -226,10 +237,15 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
 		}
 
-		//
+		// Add an infinite channel for this plugin.
 		var endpoint [sConstants.RecipientIDLength]byte
 		copy(endpoint[:], rawEp)
 		kaetzchenWorker.pluginChan[endpoint] = channels.NewInfiniteChannel()
+
+		// Add entry from this plugin for the PKI.
+		params := make(Parameters)
+		params[ParameterEndpoint] = pluginConf.Endpoint
+		kaetzchenWorker.forPKI[capa] = params
 
 		// Start the plugin clients.
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {

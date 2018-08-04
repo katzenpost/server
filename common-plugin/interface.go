@@ -14,16 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package kaetzchen implements support for provider side auto-responder
-// agents.
-package kaetzchen
+package plugin
 
 import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/katzenpost/server/internal/provider/kaetzchen/proto"
+	"github.com/katzenpost/server/common-plugin/proto"
 )
 
 // Handshake is a common handshake that is shared by plugin and host.
