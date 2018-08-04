@@ -115,6 +115,7 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 
 func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
+	// XXX wtf does this panic?
 	map2 := p.pluginKaetzchenWorker.KaetzchenForPKI()
 	// merge sets, panic on duplicate
 	for k, v := range map2 {

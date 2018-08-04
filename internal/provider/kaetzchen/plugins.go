@@ -156,9 +156,15 @@ func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClien
 }
 
 func (k *PluginKaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
-	if len(k.pluginChan) == 0 {
+	if k.pluginChan == nil {
+		k.log.Debug("wtf is pluginChan nil?")
 		return nil
 	}
+	if len(k.pluginChan) == 0 {
+		k.log.Debug("wtf is pluginChan len 0?")
+		return nil
+	}
+	k.log.Debug("blah")
 	return k.forPKI
 }
 
@@ -210,6 +216,8 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 	capaMap := make(map[string]bool)
 
 	for _, pluginConf := range glue.Config().Provider.PluginKaetzchen {
+
+		kaetzchenWorker.log.Notice("configuring another plugin handler")
 
 		// Ensure no duplicates.
 		capa := pluginConf.Capability
