@@ -427,11 +427,16 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	pluginKaetzchenWorker, err := kaetzchen.NewPluginKaetzchenWorker(glue)
+	if err != nil {
+		return nil, err
+	}
 	p := &provider{
-		glue:            glue,
-		log:             glue.LogBackend().GetLogger("provider"),
-		ch:              channels.NewInfiniteChannel(),
-		kaetzchenWorker: kaetzchenWorker,
+		glue:                  glue,
+		log:                   glue.LogBackend().GetLogger("provider"),
+		ch:                    channels.NewInfiniteChannel(),
+		kaetzchenWorker:       kaetzchenWorker,
+		pluginKaetzchenWorker: pluginKaetzchenWorker,
 	}
 
 	cfg := glue.Config()
