@@ -117,6 +117,12 @@ func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	// XXX wtf does this panic?
 	map2 := p.pluginKaetzchenWorker.KaetzchenForPKI()
+	if map1 == nil && map2 != nil {
+		return map2
+	}
+	if map1 != nil && map2 == nil {
+		return map1
+	}
 	// merge sets, panic on duplicate
 	for k, v := range map2 {
 		_, ok := map1[k]
