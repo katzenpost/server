@@ -121,7 +121,7 @@ func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClien
 	}
 
 	var resp []byte
-	respStr, err := pluginClient.OnRequest(string(ct))
+	respStr, err := pluginClient.OnRequest(ct)
 	switch {
 	case err == nil:
 	case err == ErrNoResponse:

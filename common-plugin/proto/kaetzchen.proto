@@ -2,11 +2,11 @@ syntax = "proto3";
 package proto;
 
 message Request {
-    string Payload = 1;
+    bytes Payload = 1;
 }
 
 message Response {
-    string Payload = 1;
+    bytes Payload = 1;
 }
 
 service Kaetzchen {

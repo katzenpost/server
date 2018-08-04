@@ -33,7 +33,7 @@ var Handshake = plugin.HandshakeConfig{
 }
 
 type KaetzchenPluginInterface interface {
-	OnRequest(request string) (string, error)
+	OnRequest(request []byte) ([]byte, error)
 }
 
 type GRPCServer struct {
@@ -51,7 +51,7 @@ type GRPCClient struct {
 	client proto.KaetzchenClient
 }
 
-func (m *GRPCClient) OnRequest(request string) (string, error) {
+func (m *GRPCClient) OnRequest(request []byte) ([]byte, error) {
 	resp, err := m.client.OnRequest(context.Background(), &proto.Request{
 		Payload: request,
 	})
