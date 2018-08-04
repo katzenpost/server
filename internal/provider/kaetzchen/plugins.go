@@ -56,6 +56,8 @@ type PluginKaetzchenWorker struct {
 	log  *logging.Logger
 
 	pluginChan map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
+
+	clients []*plugin.Client
 }
 
 func (k *PluginKaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
@@ -86,6 +88,7 @@ func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]b
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
+			k.killAllClients()
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
@@ -97,6 +100,12 @@ func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]b
 		}
 
 		k.processKaetzchen(pkt, pluginClient)
+	}
+}
+
+func (k *PluginKaetzchenWorker) killAllClients() {
+	for _, client := range k.clients {
+		client.Kill()
 	}
 }
 
@@ -148,7 +157,7 @@ func (k *PluginKaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLen
 	return ok
 }
 
-func (k *PluginKaetzchenWorker) launch(command string) (KaetzchenPluginInterface, error) {
+func (k *PluginKaetzchenWorker) launch(command string) (KaetzchenPluginInterface, *plugin.Client, error) {
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: Handshake,
 		Plugins:         PluginMap,
@@ -161,21 +170,21 @@ func (k *PluginKaetzchenWorker) launch(command string) (KaetzchenPluginInterface
 	rpcClient, err := client.Client()
 	if err != nil {
 		client.Kill()
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Request the plugin
 	raw, err := rpcClient.Dispense(KaetzchenService)
 	if err != nil {
 		client.Kill()
-		return nil, err
+		return nil, nil, err
 	}
 	service, ok := raw.(KaetzchenPluginInterface)
 	if !ok {
 		client.Kill()
-		return nil, errors.New("type assertion failure for KaetzchenPluginInterface")
+		return nil, nil, errors.New("type assertion failure for KaetzchenPluginInterface")
 	}
-	return service, err
+	return service, client, err
 }
 
 func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
@@ -184,6 +193,7 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("kaetzchen_worker"),
 		pluginChan: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
+		clients:    make([]*plugin.Client, 0),
 	}
 
 	capaMap := make(map[string]bool)
@@ -224,11 +234,14 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 		// Start the plugin clients.
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
 			kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s %d", capa, i)
-			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command)
+			pluginClient, client, err := kaetzchenWorker.launch(pluginConf.Command)
 			if err != nil {
 				kaetzchenWorker.log.Error("Failed to start a plugin client.")
 				return nil, err
 			}
+
+			// Accumulate a list of all clients to facilitate clean shutdown.
+			kaetzchenWorker.clients = append(kaetzchenWorker.clients, client)
 
 			// Start the worker.
 			worker := func() {
