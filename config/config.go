@@ -607,6 +607,15 @@ func (pCfg *Provider) validate() error {
 		}
 		capaMap[v.Capability] = true
 	}
+	for _, v := range pCfg.PluginKaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
 
 	return nil
 }
