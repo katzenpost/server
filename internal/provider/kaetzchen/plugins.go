@@ -172,14 +172,20 @@ func (k *PluginKaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLen
 	return ok
 }
 
-func (k *PluginKaetzchenWorker) launch(command string) (common.KaetzchenPluginInterface, *plugin.Client, error) {
-	client := plugin.NewClient(&plugin.ClientConfig{
+func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.KaetzchenPluginInterface, *plugin.Client, error) {
+	var clientCfg *plugin.ClientConfig
+	clientCfg = &plugin.ClientConfig{
 		HandshakeConfig: common.Handshake,
 		Plugins:         PluginMap,
-		Cmd:             exec.Command("sh", "-c", command),
 		AllowedProtocols: []plugin.Protocol{
 			plugin.ProtocolGRPC},
-	})
+	}
+	cmdArgs := []string{"-c", command}
+	if args != nil {
+		cmdArgs = append(cmdArgs, args...)
+	}
+	clientCfg.Cmd = exec.Command("sh", cmdArgs...)
+	client := plugin.NewClient(clientCfg)
 
 	// Connect via RPC
 	rpcClient, err := client.Client()
@@ -257,7 +263,16 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 		// Start the plugin clients.
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
 			kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s %d", capa, i)
-			pluginClient, client, err := kaetzchenWorker.launch(pluginConf.Command)
+
+			var args []string = nil
+			if len(pluginConf.Config) > 0 {
+				args = []string{}
+				for key, val := range pluginConf.Config {
+					args = append(args, fmt.Sprintf("-%s", key), val.(string))
+				}
+			}
+
+			pluginClient, client, err := kaetzchenWorker.launch(pluginConf.Command, args)
 			if err != nil {
 				kaetzchenWorker.log.Error("Failed to start a plugin client.")
 				return nil, err
