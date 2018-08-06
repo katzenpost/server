@@ -1,4 +1,4 @@
-// kaetzchen.go - Katzenpost provider auto-responder agents.
+// interface.go - Katzenpost plugin interface.
 // Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,11 +17,10 @@
 package plugin
 
 import (
-	scontext "context"
+	"context"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/katzenpost/server/common-plugin/proto"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
@@ -34,28 +33,6 @@ var Handshake = plugin.HandshakeConfig{
 
 type KaetzchenPluginInterface interface {
 	OnRequest(request []byte) ([]byte, error)
-}
-
-type GRPCServer struct {
-	Impl KaetzchenPluginInterface
-}
-
-func (m *GRPCServer) OnRequest(ctx context.Context, request *proto.Request) (*proto.Response, error) {
-	resp, err := m.Impl.OnRequest(request.Payload)
-	return &proto.Response{
-		Payload: resp,
-	}, err
-}
-
-type GRPCClient struct {
-	client proto.KaetzchenClient
-}
-
-func (m *GRPCClient) OnRequest(request []byte) ([]byte, error) {
-	resp, err := m.client.OnRequest(context.Background(), &proto.Request{
-		Payload: request,
-	})
-	return resp.Payload, err
 }
 
 // This is the implementation of plugin.Plugin so we can serve/consume this.
@@ -75,7 +52,7 @@ func (p *KaetzchenPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) 
 	return nil
 }
 
-func (p *KaetzchenPlugin) GRPCClient(ctx scontext.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+func (p *KaetzchenPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
 	return &GRPCClient{
 		client: proto.NewKaetzchenClient(c),
 	}, nil
