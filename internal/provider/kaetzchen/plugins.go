@@ -113,7 +113,7 @@ func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClien
 	}
 
 	var resp []byte
-	respStr, err := pluginClient.OnRequest(ct)
+	respStr, err := pluginClient.OnRequest(ct, surb != nil)
 	switch {
 	case err == nil:
 	case err == ErrNoResponse:
@@ -155,7 +155,6 @@ func (k *PluginKaetzchenWorker) KaetzchenForPKI() map[string]map[string]interfac
 		k.log.Debug("wtf is pluginChan len 0?")
 		return nil
 	}
-	k.log.Debug("blah")
 	return k.forPKI
 }
 

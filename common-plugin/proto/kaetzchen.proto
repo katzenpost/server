@@ -3,6 +3,7 @@ package proto;
 
 message Request {
     bytes Payload = 1;
+    bool  HasSURB = 2;
 }
 
 message Response {
