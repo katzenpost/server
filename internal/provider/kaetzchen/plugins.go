@@ -50,10 +50,8 @@ type PluginKaetzchenWorker struct {
 	log  *logging.Logger
 
 	pluginChan map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
-
-	clients []*plugin.Client
-
-	forPKI map[string]map[string]interface{}
+	clients    []*plugin.Client
+	forPKI     map[string]map[string]interface{}
 }
 
 func (k *PluginKaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
@@ -148,15 +146,10 @@ func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClien
 }
 
 func (k *PluginKaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
-	if k.pluginChan == nil {
-		k.log.Debug("wtf is pluginChan nil?")
-		return nil
-	}
 	if len(k.pluginChan) == 0 {
 		k.log.Debug("wtf is pluginChan len 0?")
 		return nil
 	}
-	k.log.Debug("blah")
 	return k.forPKI
 }
 
