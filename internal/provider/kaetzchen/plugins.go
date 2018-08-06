@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -174,7 +175,7 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 	}
 	cmdArgs := []string{"-c", command}
 	if args != nil {
-		cmdArgs = append(cmdArgs, args...)
+		cmdArgs[1] = fmt.Sprintf("%s %s", cmdArgs[1], strings.Join(args, " "))
 	}
 	clientCfg.Cmd = exec.Command("sh", cmdArgs...)
 	client := plugin.NewClient(clientCfg)
