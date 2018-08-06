@@ -31,6 +31,14 @@ var Handshake = plugin.HandshakeConfig{
 	MagicCookieValue: "hello",
 }
 
+// KaetzchenService is the name of our Kaetzchen plugins.
+var KaetzchenService = "kaetzchen"
+
+// PluginMap is the map of plugins we can dispense.
+var PluginMap = map[string]plugin.Plugin{
+	KaetzchenService: &KaetzchenPlugin{},
+}
+
 type KaetzchenPluginInterface interface {
 	OnRequest(request []byte) ([]byte, error)
 }

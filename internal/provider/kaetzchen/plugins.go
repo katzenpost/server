@@ -37,14 +37,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// KaetzchenService is the name of our Kaetzchen plugins.
-var KaetzchenService = "kaetzchen"
-
-// PluginMap is the map of plugins we can dispense.
-var PluginMap = map[string]plugin.Plugin{
-	KaetzchenService: &common.KaetzchenPlugin{},
-}
-
 // PluginKaetzchenWorker is similar to Kaetzchen worker but uses
 // the go-plugin system to implement services in external programs.
 // These plugins can be written in any language as long as it speaks gRPC
@@ -176,7 +168,7 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 	var clientCfg *plugin.ClientConfig
 	clientCfg = &plugin.ClientConfig{
 		HandshakeConfig: common.Handshake,
-		Plugins:         PluginMap,
+		Plugins:         common.PluginMap,
 		AllowedProtocols: []plugin.Protocol{
 			plugin.ProtocolGRPC},
 	}
@@ -195,7 +187,7 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 	}
 
 	// Request the plugin
-	raw, err := rpcClient.Dispense(KaetzchenService)
+	raw, err := rpcClient.Dispense(common.KaetzchenService)
 	if err != nil {
 		client.Kill()
 		return nil, nil, err
