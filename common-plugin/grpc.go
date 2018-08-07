@@ -41,5 +41,9 @@ func (m *GRPCClient) OnRequest(request []byte, hasSURB bool) ([]byte, error) {
 		Payload: request,
 		HasSURB: hasSURB,
 	})
-	return resp.Payload, err
+	if err == nil {
+		return resp.Payload, err
+	} else {
+		return nil, err
+	}
 }
