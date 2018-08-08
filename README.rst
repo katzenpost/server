@@ -14,6 +14,13 @@ To build the server see the 'daemons' repo:
 https://github.com/Katzenpost/daemons
 
 
+However note that due to the usage of gRPC and Protobuf we must perform a
+precompilation step of code generation. It is done manually as follows:
+
+::
+   
+
+
 license
 =======
 

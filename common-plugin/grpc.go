@@ -32,6 +32,16 @@ func (m *GRPCServer) OnRequest(ctx context.Context, request *proto.Request) (*pr
 	}, err
 }
 
+func (m *GRPCServer) Parameters(ctx context.Context, empty *proto.Empty) (*proto.Params, error) {
+	params, err := m.Impl.Parameters()
+	if err != nil {
+		return nil, err
+	}
+	return &proto.Params{
+		Map: params,
+	}, nil
+}
+
 type GRPCClient struct {
 	client proto.KaetzchenClient
 }

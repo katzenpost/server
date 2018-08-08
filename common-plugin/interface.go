@@ -41,6 +41,7 @@ var PluginMap = map[string]plugin.Plugin{
 
 type KaetzchenPluginInterface interface {
 	OnRequest(request []byte, hasSURB bool) ([]byte, error)
+	Parameters() (map[string]string, error)
 }
 
 // This is the implementation of plugin.Plugin so we can serve/consume this.
