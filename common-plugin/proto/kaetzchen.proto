@@ -1,0 +1,15 @@
+syntax = "proto3";
+package proto;
+
+message Request {
+    bytes Payload = 1;
+    bool  HasSURB = 2;
+}
+
+message Response {
+    bytes Payload = 1;
+}
+
+service Kaetzchen {
+    rpc OnRequest(Request) returns (Response);
+}
