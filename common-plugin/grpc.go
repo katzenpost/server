@@ -26,7 +26,7 @@ type GRPCServer struct {
 }
 
 func (m *GRPCServer) OnRequest(ctx context.Context, request *proto.Request) (*proto.Response, error) {
-	resp, err := m.Impl.OnRequest(request.Payload, request.HasSURB)
+	resp, err := m.Impl.OnRequest(request.ID, request.Payload, request.HasSURB)
 	return &proto.Response{
 		Payload: resp,
 	}, err
@@ -43,8 +43,9 @@ type GRPCClient struct {
 	client proto.KaetzchenClient
 }
 
-func (m *GRPCClient) OnRequest(request []byte, hasSURB bool) ([]byte, error) {
+func (m *GRPCClient) OnRequest(id uint64, request []byte, hasSURB bool) ([]byte, error) {
 	resp, err := m.client.OnRequest(context.Background(), &proto.Request{
+		ID:      id,
 		Payload: request,
 		HasSURB: hasSURB,
 	})

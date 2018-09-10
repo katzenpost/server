@@ -4,8 +4,9 @@ package proto;
 
 
 message Request {
-    bytes Payload = 1;
-    bool  HasSURB = 2;
+    uint64 ID     = 1;
+    bytes Payload = 2;
+    bool  HasSURB = 3;
 }
 
 message Response {
