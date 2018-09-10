@@ -188,8 +188,8 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 	}
 	service, ok := raw.(common.KaetzchenPluginInterface)
 	if !ok {
-		client.Kill()
-		return nil, nil, errors.New("type assertion failure for KaetzchenPluginInterface")
+		go client.Kill()
+		return nil, nil, errors.New("wtf type assertion failure for KaetzchenPluginInterface")
 	}
 	return service, client, err
 }

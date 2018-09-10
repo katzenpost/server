@@ -33,8 +33,7 @@ func (m *GRPCServer) OnRequest(ctx context.Context, request *proto.Request) (*pr
 }
 
 func (m *GRPCServer) Parameters(ctx context.Context, empty *proto.Empty) (*proto.Params, error) {
-	_empty := []byte{}
-	params, err := m.Impl.Parameters(_empty)
+	params, err := m.Impl.Parameters()
 	return &proto.Params{
 		Map: params,
 	}, err
@@ -56,7 +55,7 @@ func (m *GRPCClient) OnRequest(request []byte, hasSURB bool) ([]byte, error) {
 	}
 }
 
-func (m *GRPCClient) Parameters(empty []byte) (map[string]string, error) {
+func (m *GRPCClient) Parameters() (map[string]string, error) {
 	resp, err := m.client.Parameters(context.Background(), &proto.Empty{})
 	return resp.Map, err
 }
