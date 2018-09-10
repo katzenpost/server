@@ -1,5 +1,7 @@
+
 syntax = "proto3";
 package proto;
+
 
 message Request {
     bytes Payload = 1;
@@ -10,6 +12,13 @@ message Response {
     bytes Payload = 1;
 }
 
+message Params {
+    map<string, string> Map = 1;
+}
+
+message Empty {}
+
 service Kaetzchen {
     rpc OnRequest(Request) returns (Response);
+    rpc Parameters(Empty) returns (Params);
 }
