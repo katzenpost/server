@@ -32,6 +32,14 @@ func (m *GRPCServer) OnRequest(ctx context.Context, request *proto.Request) (*pr
 	}, err
 }
 
+func (m *GRPCServer) Parameters(ctx context.Context, empty *proto.Empty) (*proto.Params, error) {
+	_empty := []byte{}
+	params, err := m.Impl.Parameters(_empty)
+	return &proto.Params{
+		Map: params,
+	}, err
+}
+
 type GRPCClient struct {
 	client proto.KaetzchenClient
 }
@@ -46,4 +54,9 @@ func (m *GRPCClient) OnRequest(request []byte, hasSURB bool) ([]byte, error) {
 	} else {
 		return nil, err
 	}
+}
+
+func (m *GRPCClient) Parameters(empty []byte) (map[string]string, error) {
+	resp, err := m.client.Parameters(context.Background(), &proto.Empty{})
+	return resp.Map, err
 }
