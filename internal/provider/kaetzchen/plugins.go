@@ -242,9 +242,8 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 		kaetzchenWorker.pluginChan[endpoint] = channels.NewInfiniteChannel()
 
 		// Add entry from this plugin for the PKI.
-		params := make(Parameters)
-		params[ParameterEndpoint] = pluginConf.Endpoint
-		kaetzchenWorker.forPKI[capa] = params
+		params := make(map[string]interface{})
+		gotParams := false
 
 		// Start the plugin clients.
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
@@ -264,6 +263,21 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 				return nil, err
 			}
 
+			if !gotParams {
+				// just once we call the Parameters method on the plugin
+				// and use that info to populate our forPKI map which
+				// ends up populating the PKI document
+				p, err := pluginClient.Parameters()
+				if err != nil {
+					return nil, err
+				}
+				for key, value := range p {
+					params[key] = value
+				}
+				params[ParameterEndpoint] = pluginConf.Endpoint
+				gotParams = true
+			}
+
 			// Accumulate a list of all clients to facilitate clean shutdown.
 			kaetzchenWorker.clients = append(kaetzchenWorker.clients, client)
 
@@ -274,6 +288,7 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 			kaetzchenWorker.Go(worker)
 		}
 
+		kaetzchenWorker.forPKI[capa] = params
 		capaMap[capa] = true
 	}
 
