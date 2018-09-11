@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -168,11 +169,16 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 		AllowedProtocols: []plugin.Protocol{
 			plugin.ProtocolGRPC},
 	}
+
+	var strBuilder strings.Builder
+	strBuilder.WriteString(fmt.Sprintf("Launching command: %s ", command))
 	if args == nil {
 		clientCfg.Cmd = exec.Command(command)
 	} else {
 		clientCfg.Cmd = exec.Command(command, args...)
+		strBuilder.WriteString(strings.Join(args, " "))
 	}
+	k.log.Debug(strBuilder.String())
 
 	client := plugin.NewClient(clientCfg)
 
@@ -202,7 +208,7 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 
 	kaetzchenWorker := PluginKaetzchenWorker{
 		glue:       glue,
-		log:        glue.LogBackend().GetLogger("kaetzchen_worker"),
+		log:        glue.LogBackend().GetLogger("plugin_kaetzchen_worker"),
 		pluginChan: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
 		clients:    make([]*plugin.Client, 0),
 		forPKI:     make(map[string]map[string]interface{}),
@@ -211,8 +217,7 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 	capaMap := make(map[string]bool)
 
 	for _, pluginConf := range glue.Config().Provider.PluginKaetzchen {
-
-		kaetzchenWorker.log.Notice("configuring another plugin handler")
+		kaetzchenWorker.log.Noticef("Configuring plugin handler for %s", pluginConf.Capability)
 
 		// Ensure no duplicates.
 		capa := pluginConf.Capability
