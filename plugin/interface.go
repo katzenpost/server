@@ -20,7 +20,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/katzenpost/server/common-plugin/proto"
+	"github.com/katzenpost/server/plugin/proto"
 	"google.golang.org/grpc"
 )
 

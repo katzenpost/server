@@ -30,9 +30,9 @@ import (
 	"github.com/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
-	common "github.com/katzenpost/server/common-plugin"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
+	kplugin "github.com/katzenpost/server/plugin"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -64,7 +64,7 @@ func (k *PluginKaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient common.KaetzchenPluginInterface) {
+func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient kplugin.KaetzchenPluginInterface) {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -103,7 +103,7 @@ func (k *PluginKaetzchenWorker) killAllClients() {
 	}
 }
 
-func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClient common.KaetzchenPluginInterface) {
+func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClient kplugin.KaetzchenPluginInterface) {
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
@@ -161,11 +161,11 @@ func (k *PluginKaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLen
 	return ok
 }
 
-func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.KaetzchenPluginInterface, *plugin.Client, error) {
+func (k *PluginKaetzchenWorker) launch(command string, args []string) (kplugin.KaetzchenPluginInterface, *plugin.Client, error) {
 	var clientCfg *plugin.ClientConfig
 	clientCfg = &plugin.ClientConfig{
-		HandshakeConfig: common.Handshake,
-		Plugins:         common.PluginMap,
+		HandshakeConfig: kplugin.Handshake,
+		Plugins:         kplugin.PluginMap,
 		AllowedProtocols: []plugin.Protocol{
 			plugin.ProtocolGRPC},
 	}
@@ -190,12 +190,12 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 	}
 
 	// Request the plugin
-	raw, err := rpcClient.Dispense(common.KaetzchenService)
+	raw, err := rpcClient.Dispense(kplugin.KaetzchenService)
 	if err != nil {
 		client.Kill()
 		return nil, nil, err
 	}
-	service, ok := raw.(common.KaetzchenPluginInterface)
+	service, ok := raw.(kplugin.KaetzchenPluginInterface)
 	if !ok {
 		client.Kill()
 		return nil, nil, errors.New("WARNING: plugin not loaded, type assertion failure for KaetzchenPluginInterface")

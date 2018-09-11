@@ -17,7 +17,7 @@
 package plugin
 
 import (
-	"github.com/katzenpost/server/common-plugin/proto"
+	"github.com/katzenpost/server/plugin/proto"
 	"golang.org/x/net/context"
 )
 

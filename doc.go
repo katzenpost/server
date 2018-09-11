@@ -1,4 +1,4 @@
-//go:generate protoc --go_out=plugins=grpc:. ./common-plugin/proto/kaetzchen.proto
+//go:generate protoc --go_out=plugins=grpc:. ./plugin/proto/kaetzchen.proto
 //
 // doc.go - Katzenpost go generate command for protobuf code generation
 // Copyright (C) 2018  David Stainton.
