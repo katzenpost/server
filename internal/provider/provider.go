@@ -123,24 +123,25 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 	p.ch.In() <- pkt
 }
 
-func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
+func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	map2 := p.pluginKaetzchenWorker.KaetzchenForPKI()
 	if map1 == nil && map2 != nil {
-		return map2
+		return map2, nil
 	}
 	if map1 != nil && map2 == nil {
-		return map1
+		return map1, nil
 	}
 	// merge sets, panic on duplicate
 	for k, v := range map2 {
 		_, ok := map1[k]
 		if ok {
-			panic("wtf")
+			p.log.Debug("WARNING: duplicate plugin entries")
+			return nil, errors.New("Error, duplicate plugin entries.")
 		}
 		map1[k] = v
 	}
-	return map1
+	return map1, nil
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
