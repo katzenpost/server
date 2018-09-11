@@ -53,6 +53,7 @@ type PluginKaetzchenWorker struct {
 	forPKI     map[string]map[string]interface{}
 }
 
+// OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
 func (k *PluginKaetzchenWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh, ok := k.pluginChan[pkt.Recipient.ID]
 	if !ok {
@@ -144,6 +145,7 @@ func (k *PluginKaetzchenWorker) processKaetzchen(pkt *packet.Packet, pluginClien
 	}
 }
 
+// KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
 func (k *PluginKaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
 	if len(k.pluginChan) == 0 {
 		k.log.Debug("wtf is pluginChan len 0?")
@@ -152,6 +154,7 @@ func (k *PluginKaetzchenWorker) KaetzchenForPKI() map[string]map[string]interfac
 	return k.forPKI
 }
 
+// IsKaetzchen returns true if the given recipient is one of our workers.
 func (k *PluginKaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChan[recipient]
 	return ok
@@ -188,12 +191,13 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 	}
 	service, ok := raw.(common.KaetzchenPluginInterface)
 	if !ok {
-		go client.Kill()
-		return nil, nil, errors.New("wtf type assertion failure for KaetzchenPluginInterface")
+		client.Kill()
+		return nil, nil, errors.New("WARNING: plugin not loaded, type assertion failure for KaetzchenPluginInterface")
 	}
 	return service, client, err
 }
 
+// NewPluginKaetzchenWorker returns a new PluginKaetzchenWorker
 func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 
 	kaetzchenWorker := PluginKaetzchenWorker{
@@ -249,7 +253,7 @@ func NewPluginKaetzchenWorker(glue glue.Glue) (*PluginKaetzchenWorker, error) {
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
 			kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s %d", capa, i)
 
-			var args []string = nil
+			var args []string
 			if len(pluginConf.Config) > 0 {
 				args = []string{}
 				for key, val := range pluginConf.Config {
