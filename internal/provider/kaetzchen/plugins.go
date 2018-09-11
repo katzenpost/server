@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -166,11 +165,12 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (common.Ka
 		AllowedProtocols: []plugin.Protocol{
 			plugin.ProtocolGRPC},
 	}
-	cmdArgs := []string{"-c", command}
-	if args != nil {
-		cmdArgs[1] = fmt.Sprintf("%s %s", cmdArgs[1], strings.Join(args, " "))
+	if args == nil {
+		clientCfg.Cmd = exec.Command(command)
+	} else {
+		clientCfg.Cmd = exec.Command(command, args...)
 	}
-	clientCfg.Cmd = exec.Command("sh", cmdArgs...)
+
 	client := plugin.NewClient(clientCfg)
 
 	// Connect via RPC
