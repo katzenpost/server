@@ -49,15 +49,15 @@ type listener struct {
 }
 
 func (l *listener) Halt() {
-	// Close the listener, wait for worker() to return.
-	l.l.Close()
-	l.Worker.Halt()
-
 	// Close all connections belonging to the listener.
 	//
 	// Note: Worst case this can take up to the handshake timeout to
 	// actually complete, since the channel isn't checked mid-handshake.
 	close(l.closeAllCh)
+	l.l.Close()
+
+	// Close the listener, wait for worker() to return.
+	l.Worker.Halt()
 	l.closeAllWg.Wait()
 }
 
