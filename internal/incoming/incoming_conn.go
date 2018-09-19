@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,8 @@ import (
 var incomingConnID uint64
 
 type incomingConn struct {
+	sync.RWMutex
+
 	l   *listener
 	log *logging.Logger
 
@@ -132,26 +135,39 @@ func (c *incomingConn) worker() {
 		RandomReader:      rand.Reader,
 	}
 	var err error
+	c.Lock()
 	c.w, err = wire.NewSession(cfg, false)
+	c.Unlock()
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
 	}
-	defer c.w.Close()
+	defer func() {
+		c.Lock()
+		c.w.Close()
+		c.Unlock()
+	}()
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
+
+	c.Lock()
 	if err = c.w.Initialize(c.c); err != nil {
+		c.Unlock()
 		c.log.Errorf("Handshake failed: %v", err)
 		return
 	}
+	c.Unlock()
+
 	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
 
 	// Log the connection source.
+	c.RLock()
 	creds := c.w.PeerCredentials()
+	c.RUnlock()
 	if c.fromMix {
 		c.log.Debugf("Peer: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	} else {
@@ -184,7 +200,9 @@ func (c *incomingConn) worker() {
 	go func() {
 		defer close(commandCh)
 		for {
+			c.Lock()
 			rawCmd, err := c.w.RecvCommand()
+			c.Unlock()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return
@@ -299,7 +317,10 @@ func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 	default: // Covers errNotCached
 		respCmd.ErrorCode = commands.ConsensusNotFound
 	}
-	return c.w.SendCommand(respCmd)
+	c.Lock()
+	err = c.w.SendCommand(respCmd)
+	c.Unlock()
+	return err
 }
 
 func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
@@ -316,7 +337,9 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	}
 
 	// Get the message from the user's spool, advancing as appropriate.
+	c.RLock()
 	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(c.w.PeerCredentials().AdditionalData, advance)
+	c.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -362,7 +385,10 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		}
 	}
 
-	return c.w.SendCommand(respCmd)
+	c.Lock()
+	err = c.w.SendCommand(respCmd)
+	c.Unlock()
+	return err
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
