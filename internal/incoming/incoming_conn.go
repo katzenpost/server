@@ -137,7 +137,8 @@ func (c *incomingConn) worker() {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
 	}
-	defer c.w.Close()
+	commandCloseCh := make(chan interface{})
+	defer close(commandCloseCh)
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
@@ -176,11 +177,10 @@ func (c *incomingConn) worker() {
 	reauthMs := time.Duration(c.l.glue.Config().Debug.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
+	defer c.w.Close()
 
 	// Start reading from the peer.
 	commandCh := make(chan commands.Command)
-	commandCloseCh := make(chan interface{})
-	defer close(commandCloseCh)
 	go func() {
 		defer close(commandCh)
 		for {
