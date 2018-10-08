@@ -51,7 +51,7 @@ type outgoingConn struct {
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
-	if !bytes.Equal(c.dst.IdentityKey.Bytes(), creds.AdditionalData) {
+	if !bytes.Equal(c.dst.SigningKey.Bytes(), creds.AdditionalData) {
 		return false
 	}
 	if !c.dst.LinkKey.Equal(creds.PublicKey) {
@@ -119,7 +119,7 @@ func (c *outgoingConn) worker() {
 	}()
 
 	dialCheckCreds := wire.PeerCredentials{
-		AdditionalData: c.dst.IdentityKey.Bytes(),
+		AdditionalData: c.dst.SigningKey.Bytes(),
 		PublicKey:      c.dst.LinkKey,
 	}
 
@@ -222,7 +222,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
-		AdditionalData:    c.co.glue.IdentityKey().PublicKey().Bytes(),
+		AdditionalData:    c.co.glue.SigningKey().PublicKey().Bytes(),
 		AuthenticationKey: c.co.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}

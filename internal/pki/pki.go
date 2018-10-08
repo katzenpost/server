@@ -141,7 +141,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			ent, err := pkicache.New(d, p.glue.IdentityKey().PublicKey(), p.glue.Config().Server.IsProvider)
+			ent, err := pkicache.New(d, p.glue.SigningKey().PublicKey(), p.glue.Config().Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
@@ -219,7 +219,7 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if desc.Name != p.glue.Config().Server.Identifier {
 		return fmt.Errorf("self Name field does not match Identifier")
 	}
-	if !desc.IdentityKey.Equal(p.glue.IdentityKey().PublicKey()) {
+	if !desc.SigningKey.Equal(p.glue.SigningKey().PublicKey()) {
 		return fmt.Errorf("self identity key mismatch")
 	}
 	if !desc.LinkKey.Equal(p.glue.LinkKey().PublicKey()) {
@@ -320,10 +320,10 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	// Generate the non-key parts of the descriptor.
 	desc := &cpki.MixDescriptor{
-		Name:        p.glue.Config().Server.Identifier,
-		IdentityKey: p.glue.IdentityKey().PublicKey(),
-		LinkKey:     p.glue.LinkKey().PublicKey(),
-		Addresses:   p.descAddrMap,
+		Name:       p.glue.Config().Server.Identifier,
+		SigningKey: p.glue.SigningKey().PublicKey(),
+		LinkKey:    p.glue.LinkKey().PublicKey(),
+		Addresses:  p.descAddrMap,
 	}
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
@@ -371,7 +371,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), desc)
+	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.SigningKey(), desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -465,7 +465,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, debug.BytesToPrintString(c.AdditionalData))
+		p.log.Debugf("%v: '%v' AD not an SigningKey?.", dirStr, debug.BytesToPrintString(c.AdditionalData))
 		return nil, false, false
 	}
 	var nodeID [sConstants.NodeIDLength]byte
@@ -552,7 +552,7 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 
 		for _, v := range d.Outgoing() {
-			nodeID := v.IdentityKey.ByteArray()
+			nodeID := v.SigningKey.ByteArray()
 
 			// Ignore nodes from past epochs that are not listed in the
 			// current document.

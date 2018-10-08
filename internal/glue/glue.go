@@ -38,7 +38,8 @@ import (
 type Glue interface {
 	Config() *config.Config
 	LogBackend() *log.Backend
-	IdentityKey() *eddsa.PrivateKey
+	SigningKey() *eddsa.PrivateKey
+	MasterKey() *eddsa.PrivateKey
 	LinkKey() *ecdh.PrivateKey
 
 	Management() *thwack.Server

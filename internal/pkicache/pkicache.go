@@ -169,7 +169,7 @@ func New(d *pki.Document, identityKey *eddsa.PublicKey, isProvider bool) (*Entry
 		for _, v := range nodes {
 			// The concrete PKI implementation is responsible for ensuring
 			// that documents only contain one descriptor per identity key.
-			nodeID := v.IdentityKey.ByteArray()
+			nodeID := v.SigningKey.ByteArray()
 			m[nodeID] = v
 		}
 	}

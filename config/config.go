@@ -120,8 +120,11 @@ func (sCfg *Server) validate() error {
 
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
-	// IdentityKey specifies the identity private key.
-	IdentityKey *eddsa.PrivateKey `toml:"-"`
+	// MasterKey specifies the master private key.
+	MasterKey *eddsa.PrivateKey `toml:"-"`
+
+	// SigningKey specifies the identity private key.
+	SigningKey *eddsa.PrivateKey `toml:"-"`
 
 	// NumSphinxWorkers specifies the number of worker instances to use for
 	// inbound Sphinx packet processing.
@@ -202,7 +205,7 @@ type Debug struct {
 
 // IsUnsafe returns true iff any debug options that destroy security are set.
 func (dCfg *Debug) IsUnsafe() bool {
-	return dCfg.IdentityKey != nil
+	return dCfg.SigningKey != nil
 }
 
 func (dCfg *Debug) applyDefaults() {

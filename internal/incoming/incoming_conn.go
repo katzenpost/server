@@ -127,7 +127,7 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
-		AdditionalData:    c.l.glue.IdentityKey().PublicKey().Bytes(),
+		AdditionalData:    c.l.glue.SigningKey().PublicKey().Bytes(),
 		AuthenticationKey: c.l.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}

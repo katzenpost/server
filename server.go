@@ -52,8 +52,9 @@ var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 type Server struct {
 	cfg *config.Config
 
-	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
+	masterKey  *eddsa.PrivateKey
+	signingKey *eddsa.PrivateKey
+	linkKey    *ecdh.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -100,8 +101,8 @@ func (s *Server) reshadowCryptoWorkers() {
 }
 
 // IdentityKey returns the running server's identity public key.
-func (s *Server) IdentityKey() *eddsa.PublicKey {
-	return s.identityKey.PublicKey()
+func (s *Server) SigningKey() *eddsa.PublicKey {
+	return s.signingKey.PublicKey()
 }
 
 // RotateLog rotates the log file
@@ -203,7 +204,7 @@ func (s *Server) halt() {
 		s.inboundPackets.Close()
 	}
 	s.linkKey.Reset()
-	s.identityKey.Reset()
+	s.signingKey.Reset()
 	close(s.fatalErrCh)
 
 	s.log.Noticef("Shutdown complete.")
@@ -242,21 +243,38 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
-	// Initialize the server identity and link keys.
+	// Initialize the server signing key
 	var err error
-	if s.cfg.Debug.IdentityKey != nil {
-		s.log.Warning("IdentityKey should NOT be used for production deployments.")
-		s.identityKey = new(eddsa.PrivateKey)
-		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
+	if s.cfg.Debug.SigningKey != nil {
+		s.log.Warning("SigningKey should NOT be used for production deployments.")
+		s.signingKey = new(eddsa.PrivateKey)
+		s.signingKey.FromBytes(s.cfg.Debug.SigningKey.Bytes())
 	} else {
-		identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-		identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
-		if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-			s.log.Errorf("Failed to initialize identity: %v", err)
+		signingPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "signing.private.pem")
+		signingPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "signing.public.pem")
+		if s.signingKey, err = eddsa.Load(signingPrivateKeyFile, signingPublicKeyFile, rand.Reader); err != nil {
+			s.log.Errorf("Failed to initialize signing key: %v", err)
 			return nil, err
 		}
 	}
-	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
+	s.log.Noticef("Server signing public key is: %s", s.signingKey.PublicKey())
+
+	// Initialize the server master key
+	if s.cfg.Debug.MasterKey != nil {
+		s.log.Warning("MasterKey should NOT be used for production deployments.")
+		s.masterKey = new(eddsa.PrivateKey)
+		s.masterKey.FromBytes(s.cfg.Debug.MasterKey.Bytes())
+	} else {
+		masterPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "master.private.pem")
+		masterPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "master.public.pem")
+		if s.masterKey, err = eddsa.Load(masterPrivateKeyFile, masterPublicKeyFile, rand.Reader); err != nil {
+			s.log.Errorf("Failed to initialize master key: %v", err)
+			return nil, err
+		}
+	}
+	s.log.Noticef("Server master public key is: %s", s.masterKey.PublicKey())
+
+	// Initialize the server link key
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	if s.linkKey, err = ecdh.Load(linkKeyFile, "", rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
@@ -401,8 +419,12 @@ func (g *serverGlue) LogBackend() *log.Backend {
 	return g.s.logBackend
 }
 
-func (g *serverGlue) IdentityKey() *eddsa.PrivateKey {
-	return g.s.identityKey
+func (g *serverGlue) SigningKey() *eddsa.PrivateKey {
+	return g.s.signingKey
+}
+
+func (g *serverGlue) MasterKey() *eddsa.PrivateKey {
+	return g.s.masterKey
 }
 
 func (g *serverGlue) LinkKey() *ecdh.PrivateKey {
