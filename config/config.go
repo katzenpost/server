@@ -24,15 +24,20 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
+	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -55,6 +60,7 @@ const (
 	defaultUserDB              = "users.db"
 	defaultSpoolDB             = "spool.db"
 	defaultManagementSocket    = "management_sock"
+	defaultEpochPeriod         = 3 * time.Hour
 
 	backendPgx = "pgx"
 
@@ -651,12 +657,22 @@ func (pCfg *Provider) validate() error {
 type PKI struct {
 	// Nonvoting is a non-voting directory authority.
 	Nonvoting *Nonvoting
+	Voting    *Voting
+	EpochPeriod time.Duration
 }
 
 func (pCfg *PKI) validate() error {
 	nrCfg := 0
+	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
+		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
+	}
 	if pCfg.Nonvoting != nil {
 		if err := pCfg.Nonvoting.validate(); err != nil {
+			return err
+		}
+		nrCfg++
+	} else {
+		if err := pCfg.Voting.validate(); err != nil {
 			return err
 		}
 		nrCfg++
@@ -664,7 +680,16 @@ func (pCfg *PKI) validate() error {
 	if nrCfg != 1 {
 		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
 	}
+	if pCfg.EpochPeriod > defaultEpochPeriod {
+		return fmt.Errorf("config: EpochPeriod %v is greater than maximum permitted", pCfg.EpochPeriod)
+	}
 	return nil
+}
+
+func (pCfg *PKI) applyDefaults() {
+	if pCfg.EpochPeriod == 0 {
+		pCfg.EpochPeriod = time.Hour * 3
+	}
 }
 
 // Nonvoting is a non-voting directory authority.
@@ -686,6 +711,67 @@ func (nCfg *Nonvoting) validate() error {
 		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
 	}
 
+	return nil
+}
+
+// Peer is a voting peer.
+type Peer struct {
+	Addresses         []string
+	IdentityPublicKey string
+	LinkPublicKey     string
+}
+
+func (p *Peer) validate() error {
+	for _, address := range p.Addresses {
+		if err := utils.EnsureAddrIPPort(address); err != nil {
+			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
+		}
+	}
+	var pubKey eddsa.PublicKey
+	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
+		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
+	}
+	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
+		return fmt.Errorf("Voting Peer: Invalid LinkPublicKey: %v", err)
+	}
+	return nil
+}
+
+// Voting is a voting directory authority.
+type Voting struct {
+	Peers []*Peer
+}
+
+func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
+	authPeers := []*config.AuthorityPeer{}
+	for _, peer := range peers {
+		linkKey := new(ecdh.PublicKey)
+		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
+		if err != nil {
+			return nil, err
+		}
+		identityKey := new(eddsa.PublicKey)
+		err = identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
+		if err != nil {
+			return nil, err
+		}
+		authPeer := &config.AuthorityPeer{
+			IdentityPublicKey: identityKey,
+			LinkPublicKey:     linkKey,
+			Addresses:         peer.Addresses,
+		}
+		authPeers = append(authPeers, authPeer)
+	}
+	return authPeers, nil
+}
+
+func (vCfg *Voting) validate() error {
+	for _, peer := range vCfg.Peers {
+		err := peer.validate()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -754,6 +840,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.PKI.validate(); err != nil {
 		return err
 	}
+	cfg.PKI.applyDefaults()
 	if cfg.Server.IsProvider {
 		if cfg.Provider == nil {
 			cfg.Provider = &Provider{}
@@ -781,6 +868,22 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	return nil
+}
+
+// Store writes a config to fileName on disk
+func Store(cfg *Config, fileName string) error {
+	f, err := os.Open(fileName); if err != nil {
+		return err
+	}
+	defer f.Close()
+	// Serialize the descriptor.
+	var serialized []byte
+	enc := codec.NewEncoderBytes(&serialized, new(codec.JsonHandle))
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	_, err = f.Write(serialized)
+	return err
 }
 
 // Load parses and validates the provided buffer b as a config file body and

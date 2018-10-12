@@ -28,6 +28,7 @@ import (
 	"time"
 
 	nClient "github.com/katzenpost/authority/nonvoting/client"
+	vClient "github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/epochtime"
@@ -35,6 +36,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
@@ -276,7 +278,7 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	const publishDeadline = 3600 * time.Second
+	publishDeadline := epochtime.Period / 3
 
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
@@ -627,6 +629,19 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			PublicKey:  authPk,
 		}
 		p.impl, err = nClient.New(pkiCfg)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers)
+		if err != nil {
+			return nil, err
+		}
+		pkiCfg := &vClient.Config{
+			LogBackend:  glue.LogBackend(),
+			Authorities: authorities,
+		}
+		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
