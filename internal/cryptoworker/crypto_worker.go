@@ -48,6 +48,7 @@ type Worker struct {
 
 // UpdateMixKeys forces the Worker to re-shadow it's copy of the mix key(s).
 func (w *Worker) UpdateMixKeys() {
+	w.log.Debug("UpdateMixKeys")
 	// This is a blocking call, because bad things will happen if the keys
 	// happen to get out of sync.
 	w.updateCh <- true
@@ -135,6 +136,16 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 	return lastErr
 }
 
+func (w *Worker) prune() {
+	epoch, _, _ := epochtime.Now()
+
+	for idx, _ := range w.mixKeys {
+		if idx < epoch {
+			delete(w.mixKeys, epoch)
+		}
+	}
+}
+
 func (w *Worker) worker() {
 	const absoluteMinimumDelay = 1 * time.Millisecond
 
@@ -153,6 +164,7 @@ func (w *Worker) worker() {
 			return
 		case <-w.updateCh:
 			w.log.Debugf("Updating mix keys.")
+			w.prune()
 			w.glue.MixKeys().Shadow(w.mixKeys)
 			continue
 		case e := <-w.incomingCh:
@@ -295,6 +307,7 @@ func (w *Worker) worker() {
 }
 
 func (w *Worker) derefKeys() {
+	w.log.Debug("derefKeys")
 	for _, v := range w.mixKeys {
 		v.Deref()
 	}
