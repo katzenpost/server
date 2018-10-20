@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/worker"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const (
@@ -64,6 +65,7 @@ type MixKey struct {
 	sync.Mutex
 	worker.Worker
 
+	log     *logging.Logger
 	db      *bolt.DB
 	keypair *ecdh.PrivateKey
 	epoch   uint64
@@ -240,6 +242,7 @@ func (k *MixKey) doFlush(forceFlush bool) {
 // 0.
 func (k *MixKey) Deref() {
 	i := atomic.AddInt32(&k.refCount, -1)
+	k.log.Debugf("Deref: epoch %d new ref count is %d", k.epoch, i)
 	if i == 0 {
 		k.forceClose()
 	} else if i < 0 {
@@ -250,6 +253,7 @@ func (k *MixKey) Deref() {
 // Ref increases the refcount by one.
 func (k *MixKey) Ref() {
 	i := atomic.AddInt32(&k.refCount, 1)
+	k.log.Debugf("Ref: epoch %d new ref count is %d", k.epoch, i)
 	if i <= 1 {
 		panic("BUG: mixkey: Refcount was 0 or negative")
 	}
@@ -287,7 +291,7 @@ func (k *MixKey) forceClose() {
 
 // New creates (or loads) a mix key in the provided data directory, for the
 // given epoch.
-func New(dataDir string, epoch uint64) (*MixKey, error) {
+func New(log *logging.Logger, dataDir string, epoch uint64) (*MixKey, error) {
 	const (
 		versionKey = "version"
 		pkKey      = "privateKey"
@@ -297,6 +301,7 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 
 	// Initialize the structure and create or open the database.
 	k := &MixKey{
+		log:       log,
 		epoch:     epoch,
 		refCount:  1,
 		writeBack: make(map[[TagLength]byte]bool),

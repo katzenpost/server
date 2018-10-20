@@ -74,8 +74,10 @@ func (m *mixKeys) init() error {
 func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 	didGenerate := false
 
+	m.log.Debug("Generate before lock")
 	m.Lock()
 	defer m.Unlock()
+	m.log.Debug("Generate after lock")
 	for e := baseEpoch; e < baseEpoch+constants.NumMixKeys; e++ {
 		// Skip keys that we already have.
 		if _, ok := m.keys[e]; ok {
@@ -83,7 +85,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		}
 
 		didGenerate = true
-		k, err := mixkey.New(m.glue.Config().Server.DataDir, e)
+		k, err := mixkey.New(m.log, m.glue.Config().Server.DataDir, e)
 		if err != nil {
 			// Clean up whatever keys that may have succeded.
 			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
@@ -102,11 +104,14 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 }
 
 func (m *mixKeys) Prune() bool {
+	m.log.Debug("Prune before lock")
+
 	epoch, _, _ := epochtime.Now()
 	didPrune := false
 
 	m.Lock()
 	defer m.Unlock()
+	m.log.Debug("Prune after lock")
 
 	for idx, v := range m.keys {
 		if idx < epoch {
@@ -114,6 +119,8 @@ func (m *mixKeys) Prune() bool {
 			v.Deref()
 			delete(m.keys, idx)
 			didPrune = true
+		} else {
+			m.log.Debugf("NOT Purging key for epoch %v. Not expired.", idx)
 		}
 	}
 
@@ -131,8 +138,10 @@ func (m *mixKeys) Get(epoch uint64) (*ecdh.PublicKey, bool) {
 }
 
 func (m *mixKeys) Shadow(dst map[uint64]*mixkey.MixKey) {
+	m.log.Debug("Shadow before lock")
 	m.Lock()
 	defer m.Unlock()
+	m.log.Debug("Shadow after lock")
 
 	// Purge the keys no longer listed from dst.
 	for k, v := range dst {

@@ -348,6 +348,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if didGen, err := p.glue.MixKeys().Generate(doPublishEpoch); err == nil {
 		// Prune off the old mix keys.  Bad things happen if the epoch ever
 		// goes backwards, but everyone uses NTP right?
+		p.log.Info("CALLING MIX KEYS PRUNE")
 		didPrune := p.glue.MixKeys().Prune()
 
 		// Add the keys to the descriptor.
