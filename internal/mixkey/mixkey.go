@@ -260,10 +260,12 @@ func (k *MixKey) Ref() {
 }
 
 func (k *MixKey) forceClose() {
+	k.log.Debugf("forceClose epoch %d", k.epoch)
 	if k.db != nil {
 		f := k.db.Path() // Cache so we can unlink after Close().
 
 		// Gracefully terminate the worker.
+		k.log.Debugf("halting mixkey worker for epoch %d", k.epoch)
 		k.Halt()
 
 		// Force the DB to disk, and close.
@@ -280,8 +282,13 @@ func (k *MixKey) forceClose() {
 			// given how many levels of indirection there are to files vs
 			// the raw physical media, and the cleanup process being slightly
 			// race prone around epoch transitions.  Use FDE.
+			k.log.Debugf("calling os.Remove for epoch %d", k.epoch)
 			os.Remove(f)
+		} else {
+			k.log.Debugf("NOT calling os.Remove for epoch %d", k.epoch)
 		}
+	} else {
+		k.log.Debug("forceClose k.db is nil")
 	}
 	if k.keypair != nil {
 		k.keypair.Reset()
