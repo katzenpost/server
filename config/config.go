@@ -42,23 +42,24 @@ import (
 )
 
 const (
-	defaultAddress             = ":3219"
-	defaultLogLevel            = "NOTICE"
-	defaultNumProviderWorkers  = 1
-	defaultNumKaetzchenWorkers = 3
-	defaultUnwrapDelay         = 10 // 10 ms.
-	defaultSchedulerSlack      = 10 // 10 ms.
-	defaultSchedulerMaxBurst   = 16
-	defaultSendSlack           = 50        // 50 ms.
-	defaultDecoySlack          = 15 * 1000 // 15 sec.
-	defaultConnectTimeout      = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
-	defaultReauthInterval      = 30 * 1000 // 30 sec.
-	defaultProviderDelay       = 500       // 500 ms.
-	defaultKaetzchenDelay      = 750       // 750 ms.
-	defaultUserDB              = "users.db"
-	defaultSpoolDB             = "spool.db"
-	defaultManagementSocket    = "management_sock"
+	defaultAddress              = ":3219"
+	defaultLogLevel             = "NOTICE"
+	defaultNumConnectionWorkers = 100
+	defaultNumProviderWorkers   = 1
+	defaultNumKaetzchenWorkers  = 3
+	defaultUnwrapDelay          = 10 // 10 ms.
+	defaultSchedulerSlack       = 10 // 10 ms.
+	defaultSchedulerMaxBurst    = 16
+	defaultSendSlack            = 50        // 50 ms.
+	defaultDecoySlack           = 15 * 1000 // 15 sec.
+	defaultConnectTimeout       = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout     = 30 * 1000 // 30 sec.
+	defaultReauthInterval       = 30 * 1000 // 30 sec.
+	defaultProviderDelay        = 500       // 500 ms.
+	defaultKaetzchenDelay       = 750       // 750 ms.
+	defaultUserDB               = "users.db"
+	defaultSpoolDB              = "spool.db"
+	defaultManagementSocket     = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -126,6 +127,9 @@ func (sCfg *Server) validate() error {
 type Debug struct {
 	// IdentityKey specifies the identity private key.
 	IdentityKey *eddsa.PrivateKey `toml:"-"`
+
+	// NumConnectionWorkers number of connections workers.
+	NumConnectionWorkers int
 
 	// NumSphinxWorkers specifies the number of worker instances to use for
 	// inbound Sphinx packet processing.
@@ -210,6 +214,9 @@ func (dCfg *Debug) IsUnsafe() bool {
 }
 
 func (dCfg *Debug) applyDefaults() {
+	if dCfg.NumConnectionWorkers <= 0 {
+		dCfg.NumConnectionWorkers = defaultNumConnectionWorkers
+	}
 	if dCfg.NumSphinxWorkers <= 0 {
 		// Pick a sane default for the number of workers.
 		//
@@ -654,8 +661,8 @@ func (pCfg *Provider) validate() error {
 // PKI is the Katzenpost directory authority configuration.
 type PKI struct {
 	// Nonvoting is a non-voting directory authority.
-	Nonvoting   *Nonvoting
-	Voting      *Voting
+	Nonvoting *Nonvoting
+	Voting    *Voting
 }
 
 func (pCfg *PKI) validate() error {
