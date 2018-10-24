@@ -638,8 +638,9 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, err
 		}
 		pkiCfg := &vClient.Config{
-			LogBackend:  glue.LogBackend(),
-			Authorities: authorities,
+			LogBackend:     glue.LogBackend(),
+			Authorities:    authorities,
+			LinkPrivateKey: glue.LinkKey(),
 		}
 		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
