@@ -45,7 +45,7 @@ func (m *mixKeys) init() error {
 	// TODO: In theory this should also try to load the previous epoch's key
 	// if the current time is in the clock skew grace period.  But it may not
 	// matter much in practice.
-	epoch, _, _ := epochtime.Now()
+	epoch, _, _ := epochtime.ClockNow(m.glue.Clock())
 	if _, err := m.Generate(epoch); err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 }
 
 func (m *mixKeys) Prune() bool {
-	epoch, _, _ := epochtime.Now()
+	epoch, _, _ := epochtime.ClockNow(m.glue.Clock())
 	didPrune := false
 
 	m.Lock()

@@ -19,6 +19,7 @@
 package glue
 
 import (
+	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/log"
@@ -37,6 +38,7 @@ import (
 // Glue is the structure that binds the internal components together.
 type Glue interface {
 	Config() *config.Config
+	Clock() clockwork.Clock
 	LogBackend() *log.Backend
 	IdentityKey() *eddsa.PrivateKey
 	LinkKey() *ecdh.PrivateKey

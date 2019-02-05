@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/jonboulle/clockwork"
 	"git.schwanenlied.me/yawning/aez.git"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -60,6 +61,7 @@ type Server struct {
 
 	inboundPackets *channels.InfiniteChannel
 
+	clock         clockwork.Clock
 	scheduler     glue.Scheduler
 	cryptoWorkers []*cryptoworker.Worker
 	periodic      *periodicTimer
@@ -212,9 +214,10 @@ func (s *Server) halt() {
 
 // New returns a new Server instance parameterized with the specified
 // configuration.
-func New(cfg *config.Config) (*Server, error) {
+func New(cfg *config.Config, c clockwork.Clock) (*Server, error) {
 	s := &Server{
 		cfg:        cfg,
+		clock:      c,
 		fatalErrCh: make(chan error),
 		haltedCh:   make(chan interface{}),
 	}
@@ -443,4 +446,8 @@ func (g *serverGlue) Decoy() glue.Decoy {
 
 func (g *serverGlue) ReshadowCryptoWorkers() {
 	g.s.reshadowCryptoWorkers()
+}
+
+func (g *serverGlue) Clock() clockwork.Clock {
+	return g.s.clock
 }
