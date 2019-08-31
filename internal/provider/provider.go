@@ -114,6 +114,15 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
 			p.log.Errorf("Authentication failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+			return isValid
+		}
+		if p.glue.Config().Provider.EnableEphemeralhClients {
+			err := p.userDB.Add(ad, c.PublicKey, false)
+			if err != nil {
+				p.log.Errorf("Authentication failed: failed to create ephemeral account: %s", err)
+				return false
+			}
+			return true
 		} else {
 			p.log.Errorf("Authentication failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
 		}
