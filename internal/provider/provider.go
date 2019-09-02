@@ -33,13 +33,11 @@ import (
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
-	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/provider/kaetzchen"
@@ -113,11 +111,8 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	}
 	isValid := p.userDB.IsValid(ad, c.PublicKey)
 	if !isValid {
-		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
-			return isValid
-		}
-		if p.glue.Config().Provider.EnableEphemeralhClients {
+		p.log.Debug("wtf p.glue.Config().Provider.EnableEphemeralClients %v", p.glue.Config().Provider.EnableEphemeralClients)
+		if p.glue.Config().Provider.EnableEphemeralClients {
 			err := p.userDB.Add(ad, c.PublicKey, false)
 			if err != nil {
 				p.log.Errorf("Authentication failed: failed to create ephemeral account: %s", err)
@@ -125,7 +120,7 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 			}
 			return true
 		} else {
-			p.log.Errorf("Authentication failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: Key: '%v'", c.PublicKey)
 		}
 	}
 	return isValid
@@ -211,6 +206,7 @@ func (p *provider) connectedClients() ([][]byte, error) {
 }
 
 func (p *provider) gcEphemeralClients() {
+	p.log.Debug("garbage collecting expired ephemeral clients")
 	connectedClients, err := p.connectedClients()
 	if err != nil {
 		p.log.Errorf("wtf: %s", err)
@@ -235,7 +231,7 @@ func (p *provider) worker() {
 	// statement below. If set then the timer will periodically
 	// write to the channel triggering our GC routine.
 	var ephemeralClientGCTimer <-chan time.Time
-	if p.glue.Config().Provider.EnableEphemeralhClients {
+	if p.glue.Config().Provider.EnableEphemeralClients {
 		timer := time.NewTimer(epochtime.Period)
 		ephemeralClientGCTimer = timer.C
 		defer timer.Stop()

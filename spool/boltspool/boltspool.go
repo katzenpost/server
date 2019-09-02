@@ -207,10 +207,21 @@ func (s *boltSpool) Remove(u []byte) error {
 }
 
 func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities [][]byte) error {
+	ignoreMap := make(map[[sConstants.RecipientIDLength]byte]interface{})
+	for _, ignore := range ignoreIdentities {
+		key := [sConstants.RecipientIDLength]byte{}
+		copy(key[:], ignore)
+		ignoreMap[key] = struct{}{}
+	}
 	return s.db.Update(func(tx *bolt.Tx) error {
 		uBkt := tx.Bucket([]byte(usersBucket))
 		usersCursor := uBkt.Cursor()
 		for identity, _ := usersCursor.First(); identity != nil; identity, _ = usersCursor.Next() {
+			key := [sConstants.RecipientIDLength]byte{}
+			copy(key[:], identity)
+			if _, ok := ignoreMap[key]; ok {
+				continue
+			}
 			userSpoolBkt := uBkt.Bucket(identity)
 			userSpoolCur := userSpoolBkt.Cursor()
 			mKey, _ := userSpoolCur.First()
