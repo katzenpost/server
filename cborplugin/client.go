@@ -148,8 +148,12 @@ func (c *Client) launch(command string, args []string) error {
 
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
-	stdoutScanner.Scan()
-	c.socketPath = stdoutScanner.Text()
+	for c.socketPath == "" {
+		stdoutScanner.Scan()
+		c.socketPath = stdoutScanner.Text()
+		c.log.Debugf("received socket path: %s", c.socketPath)
+	}
+
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
 	c.setupHTTPClient(c.socketPath)
 
