@@ -83,6 +83,10 @@ type Server struct {
 	// Identifier is the human readable identifier for the node (eg: FQDN).
 	Identifier string
 
+	// NamedAddress is the name corresponding to the local interface IP address.
+	// This option is useful for usage with Docker and the like.
+	NamedAddress string
+
 	// Addresses are the IP address/port combinations that the server will bind
 	// to for incoming connections.
 	Addresses []string
@@ -112,6 +116,10 @@ func (sCfg *Server) applyDefaults() {
 func (sCfg *Server) validate() error {
 	if sCfg.Identifier == "" {
 		return fmt.Errorf("config: Server: Identifier is not set")
+	}
+
+	if sCfg.Addresses != nil && sCfg.NamedAddress != nil {
+		return fmt.Errorf("config: Server: Cannot set both fields, NamedAddress AND Addresses")
 	}
 
 	if sCfg.Addresses != nil {

@@ -363,14 +363,32 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Bring the listener(s) online.
-	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
-	for i, addr := range s.cfg.Server.Addresses {
-		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+
+	if s.cfg.Server.NamedAddress != "" {
+		name, err := os.Hostname()
 		if err != nil {
-			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
 		}
-		s.listeners = append(s.listeners, l)
+		if s.cfg.Server.NamedAddress != name {
+			return nil, fmt.Errorf("given named address doesn't match operating system hostname: %s != %s", name, s.cfg.Server.NamedAddress)
+		}
+		ipSlice, err := net.LookupIP(s.cfg.Server.NamedAddress)
+		if err != nil {
+			return nil, fmt.Errorf("named address doesn't resolve to an IP address: %s", err)
+		}
+
+		// XXX finish writing this feature addition...
+
+	} else {
+		s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
+		for i, addr := range s.cfg.Server.Addresses {
+			l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+			if err != nil {
+				s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+				return nil, err
+			}
+			s.listeners = append(s.listeners, l)
+		}
 	}
 
 	s.pki.StartWorker()
