@@ -144,6 +144,7 @@ func (c *Client) launch(command string, args []string) error {
 		c.log.Debugf("failed to exec: %s", err)
 		return err
 	}
+	c.log.Debugf("spawned plugin with process id %d", c.cmd.Process.Pid)
 
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
