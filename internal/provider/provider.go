@@ -30,6 +30,7 @@ import (
 
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
@@ -197,6 +198,31 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	return b, nil
 }
 
+func (p *provider) connectedClients() ([][]byte, error) {
+	identities := make([][]byte, 0)
+	for _, listener := range p.glue.Listeners() {
+		listenerIdentities, err := listener.GetConnIdentities()
+		if err != nil {
+			return nil, err
+		}
+		identities = append(identities, listenerIdentities...)
+	}
+	return identities, nil
+}
+
+func (p *provider) gcEphemeralClients() {
+	connectedClients, err := p.connectedClients()
+	if err != nil {
+		p.log.Errorf("wtf: %s", err)
+		return
+	}
+	err = p.Spool().VacuumExpired(p.UserDB(), connectedClients)
+	if err != nil {
+		p.log.Errorf("wtf: %s", err)
+		return
+	}
+}
+
 func (p *provider) worker() {
 	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
 
@@ -204,12 +230,25 @@ func (p *provider) worker() {
 
 	ch := p.ch.Out()
 
+	// Here we optionally set this GC timer. If unset the
+	// channel remains nil and has no effect on the select
+	// statement below. If set then the timer will periodically
+	// write to the channel triggering our GC routine.
+	var ephemeralClientGCTimer <-chan time.Time
+	if p.glue.Config().Provider.EnableEphemeralhClients {
+		timer := time.NewTimer(epochtime.Period)
+		ephemeralClientGCTimer = timer.C
+		defer timer.Stop()
+	}
+
 	for {
 		var pkt *packet.Packet
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			return
+		case <-ephemeralClientGCTimer:
+			p.gcEphemeralClients()
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
