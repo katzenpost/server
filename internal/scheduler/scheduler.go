@@ -113,14 +113,17 @@ func (sch *scheduler) worker() {
 				if pkt == nil {
 					sch.log.Debug("pkt is nil, wtf")
 					pkt.Dispose()
+					continue
 				}
 				if pkt.NextNodeHop == nil {
 					sch.log.Debugf("pkt NextNodeHop is nil, wtf, dropping packet %v", pkt.ID)
 					pkt.Dispose()
+					continue
 				}
 				if sch.glue.Connector() == nil {
 					sch.log.Debug("Connector is nil, wtf")
 					pkt.Dispose()
+					continue
 				}
 				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
 					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
