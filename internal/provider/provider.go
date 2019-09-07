@@ -111,7 +111,6 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	}
 	isValid := p.userDB.IsValid(ad, c.PublicKey)
 	if !isValid {
-		p.log.Debug("wtf p.glue.Config().Provider.EnableEphemeralClients %v", p.glue.Config().Provider.EnableEphemeralClients)
 		if p.glue.Config().Provider.EnableEphemeralClients {
 			err := p.userDB.Add(ad, c.PublicKey, false)
 			if err != nil {

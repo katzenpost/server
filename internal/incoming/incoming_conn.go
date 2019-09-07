@@ -63,6 +63,15 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
+	// Check if the client is a mix.
+	var isValid bool
+	_, c.canSend, isValid = c.l.glue.PKI().AuthenticateConnection(creds, false)
+	if isValid {
+		c.fromClient = false
+		c.fromMix = true
+	}
+
+	// Check if the client can be authenticated by the Provider.
 	if provider := c.l.glue.Provider(); provider != nil && !c.fromMix {
 		isClient := provider.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
@@ -116,24 +125,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			default:
 				c.log.Debugf("Rate limit MaxSendTokens updated: %v", c.sendTokenIncr)
 			}
-
 			return true
 		}
-
-		// Connection is not from a client, so see if it's a mix.
 	}
-
-	// Well, the peer has to be a mix since we're not a provider, or the user
-	// is unknown.
-	var isValid bool
-	c.fromClient = false
-	_, c.canSend, isValid = c.l.glue.PKI().AuthenticateConnection(creds, false)
-	if isValid {
-		c.fromMix = true
-	} else {
+	if !isValid {
 		c.log.Debugf("Authentication failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	}
-
 	return isValid
 }
 
