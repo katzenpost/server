@@ -110,6 +110,11 @@ func (sch *scheduler) worker() {
 
 				// Ensure the peer is valid by querying the outgoing connection
 				// table.
+				if pkt.NextNodeHop == nil {
+					sch.log.Debugf("Dropping packet: %v (Next hop is nil)", pkt.ID)
+					pkt.Dispose()
+					continue
+				}
 				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
 					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
 					toEnqueue = append(toEnqueue, pkt)
