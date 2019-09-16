@@ -53,12 +53,14 @@ func (q *memoryQueue) Peek() (time.Duration, *packet.Packet) {
 }
 
 func (q *memoryQueue) Pop() {
+	q.log.Debugf("Pop()")
 	heap.Pop(q.q)
 }
 
 func (q *memoryQueue) BulkEnqueue(batch []*packet.Packet) {
 	now := monotime.Now()
 	for _, pkt := range batch {
+		q.log.Debugf("BulkEnqueue now: %v, delay: %v", now, pkt.Delay)
 		q.doEnqueue(now+pkt.Delay, pkt)
 	}
 }
