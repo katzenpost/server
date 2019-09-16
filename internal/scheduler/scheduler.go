@@ -145,6 +145,7 @@ func (sch *scheduler) worker() {
 		for {
 			// Peek at the next packet in the queue.
 			dispatchAt, pkt := sch.q.Peek()
+			sch.log.Debugf("Peek() pkt dispatchAt: %v", dispatchAt)
 			if pkt == nil {
 				// The queue is empty, just reschedule for the max duration,
 				// when there are packets to schedule, we'll get woken up.
