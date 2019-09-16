@@ -177,7 +177,7 @@ func (sch *scheduler) worker() {
 
 			// The packet will be dispatched somehow, so remove it from the
 			// queue, and do the type assertion.
-			sch.q.Debugf("Timer woke %v and Pop()", now)
+			sch.log.Debugf("Timer woke %v and Pop()", now)
 			sch.q.Pop()
 
 			// Packet dispatch time is now or in the past, so it needs to be
@@ -194,7 +194,7 @@ func (sch *scheduler) worker() {
 				//
 				// Note: Callee takes ownership.
 				pkt.DispatchAt = now
-				sch.q.Debugf("DispatchPacket() at %v", now)
+				sch.log.Debugf("DispatchPacket() at %v", now)
 				sch.glue.Connector().DispatchPacket(pkt)
 			}
 		}
