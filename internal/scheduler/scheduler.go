@@ -148,6 +148,7 @@ func (sch *scheduler) worker() {
 			if pkt == nil {
 				// The queue is empty, just reschedule for the max duration,
 				// when there are packets to schedule, we'll get woken up.
+				sch.log.Debugf("Resetting timer to max")
 				timer.Reset(math.MaxInt64)
 				break
 			}
@@ -158,6 +159,7 @@ func (sch *scheduler) worker() {
 				// Packet dispatch will happen at a later time, so schedule
 				// the next timer tick, and go back to waiting for something
 				// interesting to happen.
+				sch.log.Debugf("Setting timer to %v", dispatchAt - now)
 				timer.Reset(dispatchAt - now)
 				break
 			}
@@ -167,6 +169,7 @@ func (sch *scheduler) worker() {
 				//
 				// Note: This is primarily to prevent the inbound scheduler
 				// queue from encountering pathological backlog.
+				sch.log.Debugf("Setting timer to 1 Microsecond")
 				timer.Reset(1 * time.Microsecond)
 				break
 			}

@@ -44,9 +44,11 @@ func (q *memoryQueue) Halt() {
 func (q *memoryQueue) Peek() (time.Duration, *packet.Packet) {
 	e := q.q.Peek()
 	if e == nil {
+		q.log.Debugf("returning nil Peek()")
 		return 0, nil
 	}
 
+	//XXX is time.Duration correct?
 	return time.Duration(e.Priority), e.Value.(*packet.Packet)
 }
 
@@ -64,6 +66,7 @@ func (q *memoryQueue) BulkEnqueue(batch []*packet.Packet) {
 func (q *memoryQueue) doEnqueue(prio time.Duration, pkt *packet.Packet) {
 	// Enqueue the packet unconditionally so that it is a
 	// candidate to be dropped.
+	q.log.Debugf("Enqueing with priority %v", prio)
 	q.q.Enqueue(uint64(prio), pkt)
 
 	// If queue limitations are enabled, check to see if the
