@@ -140,7 +140,7 @@ func (sCfg *Server) validate() error {
 	for k, v := range sCfg.AltAddresses {
 		lowkey := strings.ToLower(k)
 		switch pki.Transport(lowkey) {
-		case pki.TransportTCP:
+		case pki.TransportTCP, pki.TransportWS:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
 				if err != nil {
