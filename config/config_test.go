@@ -122,3 +122,44 @@ PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 	require.EqualError(err, "config: Server: Identifier is not set")
 
 }
+
+func TestAltAddressesConfig(t *testing.T) {
+	require := require.New(t)
+
+	_, err := Load(nil)
+	require.Error(err, "no Load() with nil config")
+	require.EqualError(err, "No nil buffer as config file")
+
+	const altAddressesConfig = `# A configuration example using AltAddresses.
+[server]
+Identifier = "katzenpost.example.com"
+Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+AltAddresses = { ws4 = [ "127.0.0.1:29443" ], onion = [ "bb4uwi7amkogedqo.onion:29483" ] }
+DataDir = "/var/lib/katzenpost"
+IsProvider = true
+
+[Provider]
+  BinaryRecipients = true
+  [[Provider.Kaetzchen]]
+    Capability = "loop"
+    Endpoint = "+loop"
+  [[Provider.Kaetzchen]]
+    Capability = "meow"
+	Endpoint = "+meow"
+	Config = { Locale = "ja_JP", Meow = "Nyan", NumMeows = 3 }
+
+[Logging]
+Level = "DEBUG"
+
+[PKI]
+[PKI.Nonvoting]
+Address = "127.0.0.1:6999"
+PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+`
+
+	cfg, err := Load([]byte(altAddressesConfig))
+	require.NoError(err, "Load() with basic config")
+
+	jCfg, _ := json.Marshal(cfg)
+	t.Logf("cfg: %v", string(jCfg))
+}
