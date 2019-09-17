@@ -373,6 +373,21 @@ func New(cfg *config.Config) (*Server, error) {
 		s.listeners = append(s.listeners, l)
 	}
 
+	// Bring the AltAddresses listener(s) online.
+	for transport, addresses := range s.cfg.Server.AltAddresses {
+		if !(transport  == "ws4" || transport == "ws" || transport == "ws6") {
+			continue
+		}
+		for i, addr := range addresses {
+			l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+			if err != nil {
+				s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+				return nil, err
+			}
+			s.listeners = append(s.listeners, l)
+		}
+	}
+
 	s.pki.StartWorker()
 
 	// Start the periodic 1 Hz utility timer.
