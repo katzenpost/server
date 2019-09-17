@@ -95,7 +95,7 @@ func (l *listener) worker() {
 			// upgrade connection to websocket if listener type is websocket
 			handshake, err := ws.Upgrade(conn)
 			if err != nil {
-				l.log.Errorf(err)
+				l.log.Errorf("WebSocket Upgrade failed with: %v", err)
 				conn.Close()
 				continue
 			}
@@ -103,7 +103,7 @@ func (l *listener) worker() {
 
 			header, err := ws.ReadHeader(conn)
 			if err != nil {
-				l.log.Errorf(err)
+				l.log.Errorf("WebSocket ReadHeader failed with: %v", err)
 				conn.Close()
 				continue
 			}
