@@ -88,31 +88,50 @@ func (l *listener) worker() {
 			continue
 		}
 
-		// if the listener is for websocket connections, do the handshake here,
-		// otherwise keep the default (tcp) behavior.
-		switch l.l.Addr().Network() {
-		case "ws", "ws4", "ws6":
-			// upgrade connection to websocket if listener type is websocket
-			handshake, err := ws.Upgrade(conn)
-			if err != nil {
-				l.log.Errorf("WebSocket Upgrade failed with: %v", err)
-				conn.Close()
-				continue
-			}
-			l.log.Debugf("websocket handshake: %v", handshake)
+		tcpConn := conn.(*net.TCPConn)
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
 
-			header, err := ws.ReadHeader(conn)
-			if err != nil {
-				l.log.Errorf("WebSocket ReadHeader failed with: %v", err)
-				conn.Close()
-				continue
+		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
+
+		l.onNewConn(conn)
+	}
+
+	// NOTREACHED
+}
+
+func (l *listener) wsworker() {
+	addr := l.l.Addr()
+	l.log.Noticef("Listening on: %v", addr)
+	defer func() {
+		l.log.Noticef("Stopping listening on: %v", addr)
+		l.l.Close() // Usually redundant, but harmless.
+	}()
+	for {
+		conn, err := l.l.Accept()
+		if err != nil {
+			if e, ok := err.(net.Error); ok && !e.Temporary() {
+				l.log.Errorf("Critical accept failure: %v", err)
+				return
 			}
-			l.log.Debugf("websocket header: %v", header)
-		default:
-			tcpConn := conn.(*net.TCPConn)
-			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			continue
 		}
+
+		handshake, err := ws.Upgrade(conn)
+		if err != nil {
+			l.log.Errorf("WebSocket Upgrade failed with: %v", err)
+			conn.Close()
+			continue
+		}
+		l.log.Debugf("websocket handshake: %v", handshake)
+
+		header, err := ws.ReadHeader(conn)
+		if err != nil {
+			l.log.Errorf("WebSocket ReadHeader failed with: %v", err)
+			conn.Close()
+			continue
+		}
+		l.log.Debugf("websocket header: %v", header)
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
@@ -189,7 +208,7 @@ func (l *listener) IsConnUnique(ptr interface{}) bool {
 }
 
 // New creates a new listener.
-func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (glue.Listener, error) {
+func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string, websocket bool) (glue.Listener, error) {
 	var err error
 
 	l := &listener{
@@ -205,6 +224,10 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		return nil, err
 	}
 
-	l.Go(l.worker)
+	if websocket {
+		l.Go(l.wsworker)
+	} else {
+		l.Go(l.worker)
+	}
 	return l, nil
 }

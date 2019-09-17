@@ -365,7 +365,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 	for i, addr := range s.cfg.Server.Addresses {
-		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr, false)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
@@ -373,15 +373,16 @@ func New(cfg *config.Config) (*Server, error) {
 		s.listeners = append(s.listeners, l)
 	}
 
-	// Bring the AltAddresses listener(s) online.
+	// Bring the WebSocket listener(s) online.
 	for transport, addresses := range s.cfg.Server.AltAddresses {
-		if !(transport  == "ws4" || transport == "ws" || transport == "ws6") {
+		if !(transport == "ws" || transport == "ws4" || transport == "ws6") {
 			continue
 		}
 		for i, addr := range addresses {
-			l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
+			lid := i + len(s.cfg.Server.Addresses)
+			l, err := incoming.New(goo, s.inboundPackets.In(), lid, addr, true)
 			if err != nil {
-				s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
+				s.log.Errorf("Failed to spawn WebSocket listener on address: %v (%v).", addr, err)
 				return nil, err
 			}
 			s.listeners = append(s.listeners, l)
