@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/gobwas/ws"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/glue"
@@ -87,9 +88,31 @@ func (l *listener) worker() {
 			continue
 		}
 
-		tcpConn := conn.(*net.TCPConn)
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+		// if the listener is for websocket connections, do the handshake here,
+		// otherwise keep the default (tcp) behavior.
+		switch l.l.Addr().Network() {
+		case "ws", "ws4", "ws6":
+			// upgrade connection to websocket if listener type is websocket
+			handshake, err := ws.Upgrade(conn)
+			if err != nil {
+				l.log.Errorf(err)
+				conn.Close()
+				continue
+			}
+			l.log.Debugf("websocket handshake: %v", handshake)
+
+			header, err := ws.ReadHeader(conn)
+			if err != nil {
+				l.log.Errorf(err)
+				conn.Close()
+				continue
+			}
+			l.log.Debugf("websocket header: %v", header)
+		default:
+			tcpConn := conn.(*net.TCPConn)
+			tcpConn.SetKeepAlive(true)
+			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+		}
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
