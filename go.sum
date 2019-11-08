@@ -61,11 +61,14 @@ github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f/go.mod h1:h1u/Gq
 github.com/katzenpost/memspool v0.0.1/go.mod h1:0pUZ4ZsVRbpkcymI1t6p2JiLz4DorRncXAS2if7fDdQ=
 github.com/katzenpost/minclient v0.0.5/go.mod h1:iP6HqTQzuNuyMYhzXL6pPWwthAmB7AgFEEGMm2G0XVc=
 github.com/katzenpost/minclient v0.0.6-0.20190907184312-6af60bbe31b6/go.mod h1:hvJRcp9WMc8WAPemJEc+JtyTFA++u2zI6rhLX6feYP0=
+github.com/katzenpost/minclient v0.0.6-0.20191108183345-9f4a4209c8f3 h1:VDRuRkVrkOUOPCepexelxLOW1oh7FSs9xMt+eGvtHb8=
+github.com/katzenpost/minclient v0.0.6-0.20191108183345-9f4a4209c8f3/go.mod h1:HugTULXHsWXy/J5RwTlO24OTV7cXF37uQY9K8YPlQiE=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
 github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a/go.mod h1:1ekEhTkjp8tkres5FF4Obl+L/fw6DcmvDCLp4JJgyB4=
 github.com/katzenpost/noise v0.0.0-20190907181756-73de63f19ada h1:LC9wQpFyEGKYumiT+PL70iIXuvTSwiAZpB+qEaANIkk=
 github.com/katzenpost/noise v0.0.0-20190907181756-73de63f19ada/go.mod h1:TqIOjVOESMlMl9Z+XElrJlY9gtBthOFpolLV3tA0vSg=
+github.com/katzenpost/noise v0.0.0-20190907211420-4c2fa3a5d7a1 h1:bD6fNKhG5mnTWpxscA9mrCV94ZsqYj4VUEwrjingfbM=
 github.com/katzenpost/noise v0.0.0-20190907211420-4c2fa3a5d7a1/go.mod h1:TqIOjVOESMlMl9Z+XElrJlY9gtBthOFpolLV3tA0vSg=
 github.com/katzenpost/panda v0.0.4-0.20190801155026-ac87cceaf056/go.mod h1:ZWlRxTlGXjFdVnFNP1EFuOyl6QwfQQDQWIrnZnhnl1A=
 github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
@@ -104,6 +107,7 @@ golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4/go.mod h1:yigFU9vqHzYiE8U
 golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.0.0-20190907121410-71b5226ff739 h1:Gc7JIyxvWgD6m+QmVryY0MstDORNYididDGxgZ6Tnpk=
 golang.org/x/crypto v0.0.0-20190907121410-71b5226ff739/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
+golang.org/x/crypto v0.0.0-20190909091759-094676da4a83 h1:mgAKeshyNqWKdENOnQsg+8dRTwZFIwFaO3HNl52sweA=
 golang.org/x/crypto v0.0.0-20190909091759-094676da4a83/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/net v0.0.0-20190724013045-ca1201d0de80 h1:Ao/3l156eZf2AW5wK8a7/smtodRU+gha3+BeqJ69lRk=
@@ -114,6 +118,7 @@ golang.org/x/sys v0.0.0-20190412213103-97732733099d h1:+R4KGOnez64A81RvjARKc4UT5
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20190902133755-9109b7679e13 h1:tdsQdquKbTNMsSZLqnLELJGzCANp9oXhu6zFBW6ODx4=
 golang.org/x/sys v0.0.0-20190902133755-9109b7679e13/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20190910064555-bbd175535a8b h1:3S2h5FadpNr0zUUCVZjlKIEYF+KaX/OBplTGo89CYHI=
 golang.org/x/sys v0.0.0-20190910064555-bbd175535a8b/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/text v0.3.0 h1:g61tztE5qeGQ89tm6NTjjM9VPIm088od1l6aSorWRWg=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=

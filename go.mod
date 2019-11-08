@@ -11,6 +11,7 @@ require (
 	github.com/jackc/pgx v3.5.0+incompatible
 	github.com/katzenpost/authority v0.0.9-0.20191108174838-3eb7ea450e3b
 	github.com/katzenpost/core v0.0.8-0.20191103164353-0d90f621e8bf
+	github.com/katzenpost/minclient v0.0.6-0.20191108183345-9f4a4209c8f3 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
