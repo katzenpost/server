@@ -306,7 +306,7 @@ func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 }
 
 func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	ct, surb, _, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 		packetsDropped.Inc()

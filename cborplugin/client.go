@@ -42,14 +42,16 @@ import (
 
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
-	ID      uint64
-	Payload []byte
-	HasSURB bool
+	ID             uint64
+	Payload        []byte
+	HasSURB        bool
+	SubscriptionId []byte
 }
 
 // Response is the response received after sending a Request to the plugin.
 type Response struct {
-	Payload []byte
+	SubscriptionId []byte
+	Payload        []byte
 }
 
 // Parameters is an optional mapping that plugins can publish, these get

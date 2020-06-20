@@ -124,7 +124,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	ct, surb, surbs, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		kaetzchenRequestsDropped.Inc()
@@ -148,6 +148,12 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	}
 	if len(resp) == 0 {
 		k.log.Debugf("No reply from Kaetzchen: %v", pkt.ID)
+		return
+	}
+
+	// Iff there is a SURB and a slice of SURBs, generate a SURB-Reply and schedule.
+	if surb != nil && surbs != nil {
+		// XXX fix me
 		return
 	}
 
