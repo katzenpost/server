@@ -63,13 +63,41 @@ func TestParseForwardPacket(t *testing.T) {
 	_, _, err = ParseForwardPacket(pkt)
 	require.Error(err)
 
+	// test that the 1 SURB case is handled properly
+	payload = [constants.ForwardPayloadLength]byte{}
+	pkt = &Packet{
+		Payload: payload[:],
+	}
+	pkt.Payload[0] = byte(1)
+	pkt.Payload[constants.SphinxPlaintextHeaderLength+sphinx.SURBLength] = 1
+	ct, surbs, err := ParseForwardPacket(pkt)
+	require.NoError(err)
+	require.Equal(1, len(surbs))
+	require.Equal(constants.UserForwardPayloadLength, len(ct))
+	require.Equal(int(ct[0]), 1)
+	require.Equal(int(ct[1]), 0)
+
+	// test that the 2 SURB case is handled properly
+	payload = [constants.ForwardPayloadLength]byte{}
+	pkt = &Packet{
+		Payload: payload[:],
+	}
+	pkt.Payload[0] = byte(2)
+	pkt.Payload[constants.SphinxPlaintextHeaderLength+sphinx.SURBLength+sphinx.SURBLength] = 1
+	ct, surbs, err = ParseForwardPacket(pkt)
+	require.NoError(err)
+	require.Equal(2, len(surbs))
+	require.NotEqual(constants.UserForwardPayloadLength, len(ct))
+	require.Equal(int(ct[0]), 1)
+	require.Equal(int(ct[1]), 0)
+
 	// test that a large SURB count is OK
 	payload = [constants.ForwardPayloadLength]byte{}
 	pkt = &Packet{
 		Payload: payload[:],
 	}
 	pkt.Payload[0] = byte(92)
-	ct, surbs, err := ParseForwardPacket(pkt)
+	ct, surbs, err = ParseForwardPacket(pkt)
 	require.NoError(err)
 	require.Equal(92, len(surbs))
 	require.Equal((constants.ForwardPayloadLength-constants.SphinxPlaintextHeaderLength)-(92*sphinx.SURBLength), len(ct))
