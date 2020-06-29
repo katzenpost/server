@@ -124,13 +124,13 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	ct, surbs, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		kaetzchenRequestsDropped.Inc()
 		return
 	}
-
+	surb := surbs[0] // XXX FIXME
 	resp, err := pluginClient.OnRequest(&cborplugin.Request{
 		ID:      pkt.ID,
 		Payload: ct,

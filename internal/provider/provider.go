@@ -306,13 +306,13 @@ func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 }
 
 func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	ct, surbs, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 		packetsDropped.Inc()
 		return
 	}
-
+	surb := surbs[0] // XXX FIXME
 	// Store the ciphertext in the spool.
 	if err := p.spool.StoreMessage(recipient, ct); err != nil {
 		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.ID, err)

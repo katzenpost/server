@@ -215,12 +215,10 @@ func newRedundantError(cmd commands.RoutingCommand) error {
 	return fmt.Errorf("redundant command: %T", cmd)
 }
 
-func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
+func ParseForwardPacket(pkt *Packet) ([]byte, [][]byte, error) {
 	const (
-		hdrLength    = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
-		flagsPadding = 0
-		flagsSURB    = 1
-		reserved     = 0
+		hdrLength = constants.SphinxPlaintextHeaderLength
+		reserved  = 0
 	)
 
 	// Sanity check the forward packet payload length.
@@ -230,26 +228,21 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 
 	// Parse the payload, which should be a valid BlockSphinxPlaintext.
 	b := pkt.Payload
-	if len(b) < hdrLength {
-		return nil, nil, fmt.Errorf("truncated message block")
-	}
 	if b[1] != reserved {
 		return nil, nil, fmt.Errorf("invalid message reserved: 0x%02x", b[1])
 	}
-	ct := b[hdrLength:]
-	var surb []byte
-	switch b[0] {
-	case flagsPadding:
-	case flagsSURB:
-		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
-	default:
-		return nil, nil, fmt.Errorf("invalid message flags: 0x%02x", b[0])
+	surbCount := int(b[0])
+	if (surbCount * sphinx.SURBLength) >= (constants.ForwardPayloadLength - hdrLength) {
+		return nil, nil, fmt.Errorf("invalid message SURB count: %d", uint8(b[0]))
 	}
-	if len(ct) != constants.UserForwardPayloadLength {
-		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
+	surbs := make([][]byte, surbCount)
+	startOffset := 2
+	for i := 0; i < surbCount; i++ {
+		surbs[i] = b[startOffset : startOffset+sphinx.SURBLength]
+		startOffset += sphinx.SURBLength
 	}
-
-	return ct, surb, nil
+	ct := b[hdrLength+(surbCount*sphinx.SURBLength):]
+	return ct, surbs, nil
 }
 
 func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
