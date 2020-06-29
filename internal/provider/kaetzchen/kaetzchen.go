@@ -250,11 +250,20 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
 		return
 	}
-	surb := surbs[0] // XXX FIXME
+	if len(surbs) > 1 {
+		k.log.Debugf("Multi-SURB packet sent to Kaetzchen recipient, dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		k.incrementDropCounter()
+		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
+		return
+	}
 	var resp []byte
 	dst, ok := k.kaetzchen[pkt.Recipient.ID]
+	hasSURB := false
+	if len(surbs) == 1 {
+		hasSURB = true
+	}
 	if ok {
-		resp, err = dst.OnRequest(pkt.ID, ct, surb != nil)
+		resp, err = dst.OnRequest(pkt.ID, ct, hasSURB)
 	}
 	switch {
 	case err == nil:
@@ -269,7 +278,8 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	}
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
-	if surb != nil {
+	if len(surbs) == 1 {
+		surb := surbs[0]
 		// Prepend the response header.
 		resp = append([]byte{0x01, 0x00}, resp...)
 

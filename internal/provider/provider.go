@@ -312,15 +312,19 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 		packetsDropped.Inc()
 		return
 	}
-	surb := surbs[0] // XXX FIXME
 	// Store the ciphertext in the spool.
 	if err := p.spool.StoreMessage(recipient, ct); err != nil {
 		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.ID, err)
 		return
 	}
-
+	if len(surbs) > 1 {
+		p.log.Debugf("Multi-SURB packet sent to user recipient, dropping packet: %v (%v)", pkt.ID, err)
+		packetsDropped.Inc()
+		return
+	}
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
-	if surb != nil {
+	if len(surbs) == 1 {
+		surb := surbs[0]
 		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
