@@ -130,11 +130,19 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		kaetzchenRequestsDropped.Inc()
 		return
 	}
-	surb := surbs[0] // XXX FIXME
+	if len(surbs) > 1 {
+		k.log.Debugf("Received multi-SURB payload, dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		kaetzchenRequestsDropped.Inc()
+		return
+	}
+	hasSURB := false
+	if len(surbs) == 1 {
+		hasSURB = true
+	}
 	resp, err := pluginClient.OnRequest(&cborplugin.Request{
 		ID:      pkt.ID,
 		Payload: ct,
-		HasSURB: surb != nil,
+		HasSURB: hasSURB,
 	})
 	switch err {
 	case nil:
@@ -152,10 +160,10 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	}
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
-	if surb != nil {
+	if hasSURB {
 		// Prepend the response header.
 		resp = append([]byte{0x01, 0x00}, resp...)
-
+		surb := surbs[0]
 		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
