@@ -66,6 +66,22 @@ type Subscribe struct {
 	Payload []byte
 }
 
+// NewMessages is the struct type used by the application plugin to
+// send new messages to the server and eventually the subscribing client.
+type NewMessages struct {
+	// Messages should contain one or more spool messages.
+	Messages []SpoolMessage
+}
+
+// SpoolMessage is a spool message from the application plugin.
+type SpoolMessage struct {
+	// Index is the index value from whence the message came from.
+	Index uint64
+
+	// Payload contains the actual spool message contents.
+	Payload []byte
+}
+
 // Parameters is an optional mapping that plugins can publish, these get
 // advertised to clients in the MixDescriptor.
 // The output of GetParameters() ends up being published in a map
@@ -139,27 +155,45 @@ func (c *Client) Start(command string, args []string) error {
 	return nil
 }
 
-func (c *Client) perpetualReader() <-chan []byte {
-	readCh := make(chan []byte)
+func (c *Client) decodeNewMessages(rawNewMessages []byte) (*NewMessages, error) {
+	newMessages := NewMessages{}
+	err := cbor.Unmarshal(rawNewMessages, &newMessages)
+	if err != nil {
+		return nil, err
+	}
+	return &newMessages, nil
+}
 
-	var err error
+func (c *Client) readNewMessages() (*NewMessages, error) {
+	lenPrefixBuf := make([]byte, 2)
+	_, err := io.ReadFull(c.conn, lenPrefixBuf)
+	if err != nil {
+		return nil, err
+	}
+	lenPrefix := binary.BigEndian.Uint16(lenPrefixBuf)
+	responseBuf := make([]byte, lenPrefix)
+	_, err = io.ReadFull(c.conn, responseBuf)
+	if err != nil {
+		return nil, err
+	}
+	newMessages, err := c.decodeNewMessages(responseBuf)
+	if err != nil {
+		return nil, err
+	}
+	return newMessages, nil
+}
+
+func (c *Client) perpetualReader() <-chan NewMessages {
+	readCh := make(chan NewMessages)
+
 	c.Go(func() {
 		for {
-			lenPrefixBuf := make([]byte, 2)
-			_, err = io.ReadFull(c.conn, lenPrefixBuf)
+			newMessages, err := c.readNewMessages()
 			if err != nil {
-				c.log.Errorf("Failed to read from pubsubplugin, halting...: %s", err)
-				c.Halt()
-				return
-			}
-			lenPrefix := binary.BigEndian.Uint16(lenPrefixBuf)
-			responseBuf := make([]byte, lenPrefix)
-			_, err = io.ReadFull(c.conn, responseBuf)
-			if err != nil {
-				c.log.Errorf("Failed to read from pubsubplugin, halting...: %s", err)
+				c.log.Errorf("failure to read new messages from plugin: %s", err)
 				c.Halt()
 			}
-			readCh <- responseBuf
+			readCh <- *newMessages
 		}
 	})
 
@@ -175,14 +209,18 @@ func (c *Client) worker() {
 		}
 	}()
 	readChan := c.perpetualReader()
-	select {
-	case <-c.HaltCh():
-		return
-	case message := <-readChan:
-		c.newMessagesCh.In() <- message // XXX FIXME
+	for {
+		select {
+		case <-c.HaltCh():
+			return
+		case message := <-readChan:
+			c.newMessagesCh.In() <- message
+		}
 	}
 }
 
+// GetNewMessagesChan returns an readonly channel where the
+// application messages will be written to.
 func (c *Client) GetNewMessagesChan() <-chan interface{} {
 	return c.newMessagesCh.Out()
 }
