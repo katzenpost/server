@@ -75,6 +75,7 @@ type provider struct {
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
+	pubsubPluginWorker        *pubsub.PluginWorker
 
 	httpServers []*http.Server
 }
@@ -254,9 +255,22 @@ func (p *provider) worker() {
 				packetsDropped.Inc()
 				pkt.Dispose()
 			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// Note that we pass ownership of pkt to p.cborPluginKaetzchenWorker
 				// which will take care to dispose of it.
 				p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
+			}
+			continue
+		}
+
+		if p.pubsubPluginWorker.HasRecipient(pkg.Recipient.ID) {
+			if pkt.IsSURBReply() {
+				p.log.Debugf("Dropping packet: %v (SURB-Reply for pubsub service)", pkt.ID)
+				packetsDropped.Inc()
+				pkt.Dispose()
+			} else {
+				// Note that we pass ownership of pkt to p.pubsubPluginWorker
+				// which will take care to dispose of it.
+				p.pubsubPluginWorker.OnSubscribe(pkt)
 			}
 			continue
 		}

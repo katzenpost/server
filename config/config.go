@@ -372,8 +372,12 @@ type Provider struct {
 	Kaetzchen []*Kaetzchen
 
 	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
-	// for this provider.
+	// for this Provider.
 	CBORPluginKaetzchen []*CBORPluginKaetzchen
+
+	// PubsubPlugin is the list of configured external Publish Subscribe service plugins
+	// for this Provider.
+	PubsubPlugin []*PubsubPlugin
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -535,6 +539,56 @@ func (kCfg *CBORPluginKaetzchen) validate() error {
 	return nil
 }
 
+// PubsubPlugin is a Provider Publish Subscribe service agent.
+type PubsubPlugin struct {
+	// Capability is the capability exposed by the agent.
+	Capability string
+
+	// Endpoint is the provider side endpoint that the agent will accept
+	// requests at.  While not required by the spec, this server only
+	// supports Endpoints that are lower-case local-parts of an e-mail
+	// address.
+	Endpoint string
+
+	// Config is the extra per agent arguments to be passed to the agent's
+	// initialization routine.
+	Config map[string]interface{}
+
+	// Command is the full file path to the external plugin program
+	// that implements this Kaetzchen service.
+	Command string
+
+	// MaxConcurrency is the number of worker goroutines to start
+	// for this service.
+	MaxConcurrency int
+
+	// Disable disabled a configured agent.
+	Disable bool
+}
+
+func (kCfg *PubsubPlugin) validate() error {
+	if kCfg.Capability == "" {
+		return fmt.Errorf("config: Pubsub: Capability is invalid")
+	}
+
+	// Ensure the endpoint is normalized.
+	epNorm, err := precis.UsernameCaseMapped.String(kCfg.Endpoint)
+	if err != nil {
+		return fmt.Errorf("config: Pubsub: '%v' has invalid endpoint: %v", kCfg.Capability, err)
+	}
+	if epNorm != kCfg.Endpoint {
+		return fmt.Errorf("config: Pubsub: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if kCfg.Command == "" {
+		return fmt.Errorf("config: Pubsub: Command is invalid")
+	}
+	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
+		return fmt.Errorf("config: Pubsub: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
+	}
+
+	return nil
+}
+
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	if pCfg.UserDB == nil {
 		pCfg.UserDB = &UserDB{}
@@ -648,6 +702,15 @@ func (pCfg *Provider) validate() error {
 		capaMap[v.Capability] = true
 	}
 	for _, v := range pCfg.CBORPluginKaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	for _, v := range pCfg.PubsubPlugin {
 		if err := v.validate(); err != nil {
 			return err
 		}

@@ -34,6 +34,7 @@ const (
 	DecoySubsystem        = "decoy"
 	IncomingConnSubsystem = "incoming_conn"
 	KaetzchenSubsystem    = "kaetzchen"
+	PubsubPluginSubsystem = "pubsub_plugin"
 	OutgoingConnSubsystem = "outgoing_conn"
 	PKISubsystem          = "pki"
 	ProviderSubsystem     = "provider"
