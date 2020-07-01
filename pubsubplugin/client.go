@@ -44,6 +44,21 @@ const (
 	unixSocketNetwork = "unix"
 )
 
+// PrefixLengthEncode encodes the given byte slice with
+// two byte big endian length prefix encoding.
+func PrefixLengthEncode(b []byte) []byte {
+	lenPrefix := make([]byte, 2)
+	binary.BigEndian.PutUint16(lenPrefix, uint16(len(b)))
+	b = append(lenPrefix, b...)
+	return b
+}
+
+// PrefixLengthDecode decodes the first two bytes of the
+// given byte slice as a uint16, big endian encoded.
+func PrefixLengthDecode(b []byte) uint16 {
+	return binary.BigEndian.Uint16(b[:2])
+}
+
 // Subscribe is the struct type used to establish a subscription with
 // the plugin.
 type Subscribe struct {
@@ -61,9 +76,36 @@ type Subscribe struct {
 
 	// LastSpoolIndex is the last spool index which was received by the client.
 	LastSpoolIndex uint64
+}
 
-	// Payload is the payload to be delivered to the spool service plugin.
-	Payload []byte
+// SubscribeToBytes encodes the given Subscribe as a CBOR byte blob.
+func SubscribeToBytes(subscribe *Subscribe) ([]byte, error) {
+	serializedSubscribe, err := cbor.Marshal(subscribe)
+	if err != nil {
+		return nil, err
+	}
+	return serializedSubscribe, nil
+}
+
+// ClientSubscribe is used by the mixnet client to send a subscription
+// request to the publish-subscribe application plugin.
+type ClientSubscribe struct {
+	// SpoolID is the spool identity.
+	SpoolID [SpoolIDLength]byte
+
+	// LastSpoolIndex is the last spool index which was received by the client.
+	LastSpoolIndex uint64
+}
+
+// ClientSubscribeFromBytes decodes a ClientSubscribe from the
+// given CBOR byte blob.
+func ClientSubscribeFromBytes(b []byte) (*ClientSubscribe, error) {
+	clientSubscribe := ClientSubscribe{}
+	err := cbor.Unmarshal(b, &clientSubscribe)
+	if err != nil {
+		return nil, err
+	}
+	return &clientSubscribe, nil
 }
 
 // NewMessages is the struct type used by the application plugin to
@@ -71,6 +113,17 @@ type Subscribe struct {
 type NewMessages struct {
 	// Messages should contain one or more spool messages.
 	Messages []SpoolMessage
+}
+
+// NewMessagesFromBytes decodes the given CBOR byte blob
+// into a NewMessages or returns an error.
+func NewMessagesFromBytes(b []byte) (*NewMessages, error) {
+	newMessages := NewMessages{}
+	err := cbor.Unmarshal(b, &newMessages)
+	if err != nil {
+		return nil, err
+	}
+	return &newMessages, nil
 }
 
 // SpoolMessage is a spool message from the application plugin.
@@ -90,9 +143,29 @@ type SpoolMessage struct {
 // https://github.com/katzenpost/core/blob/master/pki/pki.go
 type Parameters map[string]string
 
+// ParametersFromBytes returns Parameters given a CBOR byte blob.
+// Otherwise an error is returned.
+func ParametersFromBytes(b []byte) (*Parameters, error) {
+	params := make(Parameters)
+	err := cbor.Unmarshal(b, &params)
+	if err != nil {
+		return nil, err
+	}
+	return &params, nil
+}
+
 // GetParameters is used for querying the plugin over the unix socket
 // to get the dynamic parameters after the plugin is started.
 type GetParameters struct{}
+
+// GetParametersToBytes returns the CBOR representation of GetParameters.
+func GetParametersToBytes() ([]byte, error) {
+	rawGetParams, err := cbor.Marshal(&GetParameters{})
+	if err != nil {
+		return nil, err
+	}
+	return rawGetParams, nil
+}
 
 // ServicePlugin is the interface that we expose for external
 // plugins to implement. This is similar to the internal Kaetzchen
@@ -155,28 +228,19 @@ func (c *Client) Start(command string, args []string) error {
 	return nil
 }
 
-func (c *Client) decodeNewMessages(rawNewMessages []byte) (*NewMessages, error) {
-	newMessages := NewMessages{}
-	err := cbor.Unmarshal(rawNewMessages, &newMessages)
-	if err != nil {
-		return nil, err
-	}
-	return &newMessages, nil
-}
-
 func (c *Client) readNewMessages() (*NewMessages, error) {
 	lenPrefixBuf := make([]byte, 2)
 	_, err := io.ReadFull(c.conn, lenPrefixBuf)
 	if err != nil {
 		return nil, err
 	}
-	lenPrefix := binary.BigEndian.Uint16(lenPrefixBuf)
+	lenPrefix := PrefixLengthDecode(lenPrefixBuf)
 	responseBuf := make([]byte, lenPrefix)
 	_, err = io.ReadFull(c.conn, responseBuf)
 	if err != nil {
 		return nil, err
 	}
-	newMessages, err := c.decodeNewMessages(responseBuf)
+	newMessages, err := NewMessagesFromBytes(responseBuf)
 	if err != nil {
 		return nil, err
 	}
@@ -242,36 +306,33 @@ func (c *Client) setupUnixSocketClient(socketPath string) error {
 
 func (c *Client) getParameters() (*Parameters, error) {
 	// write GetParameters "command"
-	rawGetParams, err := cbor.Marshal(&GetParameters{})
+	rawGetParams, err := GetParametersToBytes()
 	if err != nil {
 		return nil, err
 	}
-	lenPrefixBuf := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenPrefixBuf, uint16(len(rawGetParams)))
-	rawGetParams = append(lenPrefixBuf, rawGetParams...)
+	rawGetParams = PrefixLengthEncode(rawGetParams)
 	_, err = c.conn.Write(rawGetParams)
 	if err != nil {
 		return nil, err
 	}
 
 	// read response
-	lenPrefixBuf = make([]byte, 2)
+	lenPrefixBuf := make([]byte, 2)
 	_, err = io.ReadFull(c.conn, lenPrefixBuf)
 	if err != nil {
 		return nil, err
 	}
-	lenPrefix := binary.BigEndian.Uint16(lenPrefixBuf)
+	lenPrefix := PrefixLengthDecode(lenPrefixBuf)
 	responseBuf := make([]byte, lenPrefix)
 	_, err = io.ReadFull(c.conn, responseBuf)
 	if err != nil {
 		return nil, err
 	}
-	responseParams := make(Parameters)
-	err = cbor.Unmarshal(responseBuf, &responseParams)
+	responseParams, err := ParametersFromBytes(responseBuf)
 	if err != nil {
 		return nil, err
 	}
-	return &responseParams, nil
+	return responseParams, nil
 }
 
 func (c *Client) launch(command string, args []string) error {
@@ -325,13 +386,11 @@ func (c *Client) launch(command string, args []string) error {
 // OnSubscribe send a subscription request to the plugin using our
 // length prefixed CBOR over Unix domain socket protocol.
 func (c *Client) OnSubscribe(subscribe *Subscribe) error {
-	serializedSubscribe, err := cbor.Marshal(subscribe)
+	serializedSubscribe, err := SubscribeToBytes(subscribe)
 	if err != nil {
 		return err
 	}
-	lenPrefix := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenPrefix, uint16(len(serializedSubscribe)))
-	serializedSubscribe = append(lenPrefix, serializedSubscribe...)
+	serializedSubscribe = PrefixLengthEncode(serializedSubscribe)
 	_, err = c.conn.Write(serializedSubscribe)
 	return err
 }
