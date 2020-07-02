@@ -179,9 +179,29 @@ func ParametersFromBytes(b []byte) (*Parameters, error) {
 	return &params, nil
 }
 
+// ParametersToBytes returns a CBOR byte blob given a *Parameters.
+func ParametersToBytes(params *Parameters) ([]byte, error) {
+	rawParams, err := cbor.Marshal(params)
+	if err != nil {
+		return nil, err
+	}
+	return rawParams, nil
+}
+
 // GetParameters is used for querying the plugin over the unix socket
 // to get the dynamic parameters after the plugin is started.
 type GetParameters struct{}
+
+// GetParametersFromBytes returns a *GetParameters given a CBOR byte blob
+// or an error.
+func GetParametersFromBytes(b []byte) (*GetParameters, error) {
+	getParams := GetParameters{}
+	err := cbor.Unmarshal(b, &getParams)
+	if err != nil {
+		return nil, err
+	}
+	return &getParams, nil
+}
 
 // GetParametersToBytes returns the CBOR representation of GetParameters.
 func GetParametersToBytes() ([]byte, error) {
