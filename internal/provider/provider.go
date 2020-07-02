@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/provider/kaetzchen"
+	"github.com/katzenpost/server/internal/provider/pubsub"
 	"github.com/katzenpost/server/internal/sqldb"
 	"github.com/katzenpost/server/registration"
 	"github.com/katzenpost/server/spool"
@@ -262,7 +263,7 @@ func (p *provider) worker() {
 			continue
 		}
 
-		if p.pubsubPluginWorker.HasRecipient(pkg.Recipient.ID) {
+		if p.pubsubPluginWorker.HasRecipient(pkt.Recipient.ID) {
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for pubsub service)", pkt.ID)
 				packetsDropped.Inc()
@@ -270,7 +271,7 @@ func (p *provider) worker() {
 			} else {
 				// Note that we pass ownership of pkt to p.pubsubPluginWorker
 				// which will take care to dispose of it.
-				p.pubsubPluginWorker.OnSubscribe(pkt)
+				p.pubsubPluginWorker.OnSubscribeRequest(pkt)
 			}
 			continue
 		}

@@ -28,6 +28,7 @@ import (
 	"syscall"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/eapache/channels.v1"
@@ -78,6 +79,13 @@ type Subscribe struct {
 	LastSpoolIndex uint64
 }
 
+// GenerateSubscriptionID returns a random subscription ID.
+func GenerateSubscriptionID() [SubscriptionIDLength]byte {
+	id := [SubscriptionIDLength]byte{}
+	rand.Reader.Read(id[:])
+	return id
+}
+
 // SubscribeToBytes encodes the given Subscribe as a CBOR byte blob.
 func SubscribeToBytes(subscribe *Subscribe) ([]byte, error) {
 	serializedSubscribe, err := cbor.Marshal(subscribe)
@@ -95,6 +103,10 @@ type ClientSubscribe struct {
 
 	// LastSpoolIndex is the last spool index which was received by the client.
 	LastSpoolIndex uint64
+
+	// Payload is the application specific payload which the client sends to
+	// the plugin.
+	Payload []byte
 }
 
 // ClientSubscribeFromBytes decodes a ClientSubscribe from the
@@ -108,17 +120,29 @@ func ClientSubscribeFromBytes(b []byte) (*ClientSubscribe, error) {
 	return &clientSubscribe, nil
 }
 
-// NewMessages is the struct type used by the application plugin to
+// NewAppMessages is the struct type used by the application plugin to
 // send new messages to the server and eventually the subscribing client.
-type NewMessages struct {
+type NewAppMessages struct {
+	// SubscriptionID is the server generated subscription identity.
+	SubscriptionID [SubscriptionIDLength]byte
+
 	// Messages should contain one or more spool messages.
 	Messages []SpoolMessage
 }
 
-// NewMessagesFromBytes decodes the given CBOR byte blob
-// into a NewMessages or returns an error.
-func NewMessagesFromBytes(b []byte) (*NewMessages, error) {
-	newMessages := NewMessages{}
+// MessagesToBytes returns a CBOR byte blob given a slice of type SpoolMessage.
+func MessagesToBytes(messages []SpoolMessage) ([]byte, error) {
+	serialized, err := cbor.Marshal(messages)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+// NewAppMessagesFromBytes decodes the given CBOR byte blob
+// into a NewAppMessages or returns an error.
+func NewAppMessagesFromBytes(b []byte) (*NewAppMessages, error) {
+	newMessages := NewAppMessages{}
 	err := cbor.Unmarshal(b, &newMessages)
 	if err != nil {
 		return nil, err
@@ -131,7 +155,8 @@ type SpoolMessage struct {
 	// Index is the index value from whence the message came from.
 	Index uint64
 
-	// Payload contains the actual spool message contents.
+	// Payload contains the actual spool message contents which are
+	// application specific.
 	Payload []byte
 }
 
@@ -176,9 +201,9 @@ type ServicePlugin interface {
 	// a subscription request designated for a particular plugin agent.
 	OnSubscribe(*Subscribe) error
 
-	// GetNewMessagesChan returns an readonly channel where the
+	// GetNewAppMessagesChan returns an readonly channel where the
 	// application messages will be written to.
-	GetNewMessagesChan() <-chan interface{}
+	GetNewAppMessagesChan() <-chan interface{}
 
 	// Parameters returns the agent's paramenters for publication in
 	// the Provider's descriptor.
@@ -228,7 +253,7 @@ func (c *Client) Start(command string, args []string) error {
 	return nil
 }
 
-func (c *Client) readNewMessages() (*NewMessages, error) {
+func (c *Client) readNewAppMessages() (*NewAppMessages, error) {
 	lenPrefixBuf := make([]byte, 2)
 	_, err := io.ReadFull(c.conn, lenPrefixBuf)
 	if err != nil {
@@ -240,19 +265,19 @@ func (c *Client) readNewMessages() (*NewMessages, error) {
 	if err != nil {
 		return nil, err
 	}
-	newMessages, err := NewMessagesFromBytes(responseBuf)
+	newMessages, err := NewAppMessagesFromBytes(responseBuf)
 	if err != nil {
 		return nil, err
 	}
 	return newMessages, nil
 }
 
-func (c *Client) perpetualReader() <-chan NewMessages {
-	readCh := make(chan NewMessages)
+func (c *Client) perpetualReader() <-chan NewAppMessages {
+	readCh := make(chan NewAppMessages)
 
 	c.Go(func() {
 		for {
-			newMessages, err := c.readNewMessages()
+			newMessages, err := c.readNewAppMessages()
 			if err != nil {
 				c.log.Errorf("failure to read new messages from plugin: %s", err)
 				c.Halt()
@@ -283,9 +308,9 @@ func (c *Client) worker() {
 	}
 }
 
-// GetNewMessagesChan returns an readonly channel where the
+// GetNewAppMessagesChan returns an readonly channel where the
 // application messages will be written to.
-func (c *Client) GetNewMessagesChan() <-chan interface{} {
+func (c *Client) GetNewAppMessagesChan() <-chan interface{} {
 	return c.newMessagesCh.Out()
 }
 

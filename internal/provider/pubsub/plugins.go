@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
@@ -115,10 +117,11 @@ type PluginWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	haltOnce    sync.Once
-	pluginChans PluginChans
-	clients     []*pubsubplugin.Client
-	forPKI      ServiceMap
+	haltOnce      sync.Once
+	subscriptions *sync.Map // [SubscriptionIDLength]byte -> [][]byte (slice of SURBs)
+	pluginChans   PluginChans
+	clients       []*pubsubplugin.Client
+	forPKI        ServiceMap
 }
 
 // OnSubscribeRequest enqueues the pkt for processing by our thread pool of plugins.
@@ -129,6 +132,30 @@ func (k *PluginWorker) OnSubscribeRequest(pkt *packet.Packet) {
 		return
 	}
 	handlerCh.In() <- pkt
+}
+
+func (k *PluginWorker) sendReply(surb, payload []byte) {
+	// Prepend the response header.
+	payload = append([]byte{0x01, 0x00}, payload...)
+
+	// generate random delay for first hop of SURB-Reply on Provider
+	epoch, _, _ := epochtime.Now()
+	doc, err := k.glue.PKI().GetCachedConsensusDoc(epoch)
+	if err != nil {
+		k.log.Debugf("Failed to get PKI doc for generating SURB-Reply: %v", err)
+		return
+	}
+	delay := packet.NewProviderDelay(rand.NewMath(), doc)
+
+	respPkt, err := packet.NewDelayedPacketFromSURB(delay, surb, payload)
+	if err != nil {
+		k.log.Debugf("Failed to generate SURB-Reply: %v", err)
+		return
+	}
+
+	k.log.Debugf("Handing off newly generated SURB-Reply: %v", respPkt.ID)
+	k.glue.Scheduler().OnPacket(respPkt)
+	return
 }
 
 func (k *PluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient pubsubplugin.ServicePlugin) {
@@ -146,12 +173,38 @@ func (k *PluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, plug
 	}
 	ch := handlerCh.Out()
 
+	appMessagesChan := pluginClient.GetNewAppMessagesChan()
 	for {
 		var pkt *packet.Packet
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
 			return
+		case rawAppMessages := <-appMessagesChan:
+			appMessages, ok := rawAppMessages.(*pubsubplugin.NewAppMessages)
+			if !ok {
+				k.log.Error("Error, failed type assertion to *NewMessages")
+				continue
+			}
+			rawSURBs, ok := k.subscriptions.Load(appMessages.SubscriptionID)
+			if !ok {
+				k.log.Error("Error, failed load a subscription ID from sync.Map")
+				continue
+			}
+			surbs, ok := rawSURBs.([][]byte)
+			if !ok {
+				k.log.Error("Error, failed type assertion to SURBs of type [][]byte")
+				continue
+			}
+			messagesBlob, err := pubsubplugin.MessagesToBytes(appMessages.Messages)
+			if err != nil {
+				k.log.Errorf("Error, failed to encode app messages as CBOR blob: %s", err)
+				continue
+			}
+			surb := surbs[0]
+			surbs = surbs[1:]
+			k.subscriptions.Store(appMessages.SubscriptionID, surbs)
+			k.sendReply(surb, messagesBlob)
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
@@ -160,10 +213,9 @@ func (k *PluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, plug
 				pkt.Dispose()
 				continue
 			}
+			k.processPacket(pkt, pluginClient)
+			pubsubRequests.Inc()
 		}
-
-		k.processPacket(pkt, pluginClient)
-		pubsubRequests.Inc()
 	}
 }
 
@@ -179,9 +231,9 @@ func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient pubsubplug
 	defer pubsubRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
-	ct, surbs, err := packet.ParseForwardPacket(pkt)
+	payload, surbs, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
-		k.log.Debugf("Dropping Pubsub request: %v (%v)", pkt.ID, err)
+		k.log.Debugf("Failed to parse forward packet. Dropping Pubsub request: %v (%v)", pkt.ID, err)
 		pubsubRequestsDropped.Inc()
 		return
 	}
@@ -190,31 +242,27 @@ func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient pubsubplug
 		pubsubRequestsDropped.Inc()
 		return
 	}
+	clientSubscribe, err := pubsubplugin.ClientSubscribeFromBytes(payload)
+	if err != nil {
+		k.log.Debugf("Failed to decode payload. Dropping Pubsub request: %v (%v)", pkt.ID, err)
+		pubsubRequestsDropped.Inc()
+		return
+	}
+
+	subscriptionID := pubsubplugin.GenerateSubscriptionID()
+	k.subscriptions.Store(subscriptionID, surbs)
+
 	err = pluginClient.OnSubscribe(&pubsubplugin.Subscribe{
-		ID:        pkt.ID,
-		Payload:   ct,
-		SURBCount: len(surbs),
+		PacketID:       pkt.ID,
+		SURBCount:      uint8(len(surbs)),
+		SubscriptionID: subscriptionID,
+		SpoolID:        clientSubscribe.SpoolID,
+		LastSpoolIndex: clientSubscribe.LastSpoolIndex,
 	})
 	if err != nil {
-		k.log.Debugf("Failed to handle Pubsub request: %v (%v), response: %s", pkt.ID, err, resp)
+		k.log.Debugf("Failed to handle Pubsub request: %v (%v)", pkt.ID, err)
 		return
 	}
-	if len(resp) == 0 {
-		k.log.Debugf("No reply from Pubsub: %v", pkt.ID)
-		return
-	}
-
-	// Prepend the response header.
-	resp = append([]byte{0x01, 0x00}, resp...)
-	surb := surbs[0]
-	respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
-	if err != nil {
-		k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
-		return
-	}
-
-	k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
-	k.glue.Scheduler().OnPacket(respPkt)
 	return
 }
 
@@ -223,8 +271,8 @@ func (k *PluginWorker) PubsubForPKI() ServiceMap {
 	return k.forPKI
 }
 
-// IsPubsub returns true if the given recipient is one of our workers.
-func (k *PluginWorker) IsPubsub(recipient [sConstants.RecipientIDLength]byte) bool {
+// HasRecipient returns true if the given recipient is one of our workers.
+func (k *PluginWorker) HasRecipient(recipient [sConstants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChans[recipient]
 	return ok
 }
@@ -240,11 +288,12 @@ func (k *PluginWorker) launch(command string, args []string) (*pubsubplugin.Clie
 func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 
 	pluginWorker := PluginWorker{
-		glue:        glue,
-		log:         glue.LogBackend().GetLogger("pubsub plugin worker"),
-		pluginChans: make(PluginChans),
-		clients:     make([]*pubsubplugin.Client, 0),
-		forPKI:      make(ServiceMap),
+		glue:          glue,
+		log:           glue.LogBackend().GetLogger("pubsub plugin worker"),
+		pluginChans:   make(PluginChans),
+		clients:       make([]*pubsubplugin.Client, 0),
+		forPKI:        make(ServiceMap),
+		subscriptions: new(sync.Map),
 	}
 
 	capaMap := make(map[string]bool)

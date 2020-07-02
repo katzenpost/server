@@ -66,6 +66,7 @@ type PKI interface {
 	StartWorker()
 	OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
+	GetCachedConsensusDoc(uint64) (*pki.Document, error)
 	GetRawConsensus(uint64) ([]byte, error)
 }
 

@@ -19,11 +19,14 @@ package packet
 
 import (
 	"fmt"
+	mRand "math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/core/utils"
@@ -288,6 +291,63 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	respPkt.Set(nil, cmds)
 
 	respPkt.RecvAt = pkt.RecvAt
+	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
+	respPkt.MustForward = true
+
+	// XXX: This should probably fudge the delay to account for processing
+	// time.
+
+	return respPkt, nil
+}
+
+func NewProviderDelay(rng *mRand.Rand, doc *pki.Document) uint32 {
+	delay := uint64(rand.Exp(rng, doc.Mu)) + 1
+	if doc.MuMaxDelay > 0 && delay > doc.MuMaxDelay {
+		delay = doc.MuMaxDelay
+	}
+	return uint32(delay)
+}
+
+// NewDelayedPacketFromSURB creates a new Packet given a SURB, payload and, delay
+// where the specified delay is for the first hop, the Provider.
+func NewDelayedPacketFromSURB(delay uint32, surb, payload []byte) (*Packet, error) {
+	// Pad out payloads to the full packet size.
+	var respPayload [constants.ForwardPayloadLength]byte
+	switch {
+	case len(payload) == 0:
+	case len(payload) > constants.ForwardPayloadLength:
+		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
+	default:
+		copy(respPayload[:], payload)
+	}
+
+	// Build a response packet using a SURB.
+	//
+	// TODO/perf: This is a crypto operation that is paralleizable, and
+	// could be handled by the crypto worker(s), since those are allocated
+	// based on hardware acceleration considerations.  However the forward
+	// packet processing doesn't constantly utilize the AES-NI units due
+	// to the non-AEZ components of a Sphinx Unwrap operation.
+	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the command vector for the SURB-ACK
+	cmds := make([]commands.RoutingCommand, 0, 2)
+
+	nextHopCmd := new(commands.NextNodeHop)
+	copy(nextHopCmd.ID[:], firstHop[:])
+	cmds = append(cmds, nextHopCmd)
+
+	nodeDelayCmd := new(commands.NodeDelay)
+	nodeDelayCmd.Delay = delay
+	cmds = append(cmds, nodeDelayCmd)
+
+	// Assemble the response packet.
+	respPkt, _ := New(rawRespPkt)
+	respPkt.Set(nil, cmds)
+
 	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
 	respPkt.MustForward = true
 
