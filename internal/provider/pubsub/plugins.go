@@ -90,9 +90,16 @@ func init() {
 	prometheus.MustRegister(pubsubRequestsDuration)
 }
 
-// ParameterEndpoint is the mandatory Parameter key indicationg the
-// Kaetzchen's endpoint.
-const ParameterEndpoint = "endpoint"
+const (
+	// ParameterEndpoint is the mandatory Parameter key indicationg the
+	// Kaetzchen's endpoint.
+	ParameterEndpoint = "endpoint"
+)
+
+// GarbageCollectionInterval is the time interval between running our
+// subscription garbage collection routine. We shall attempt to garbage collect
+// 5 times per epoch.
+var GarbageCollectionInterval = epochtime.Period / 5
 
 // PluginChans maps from Recipient ID to channel.
 type PluginChans = map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
@@ -109,6 +116,16 @@ type PluginParameters = map[PluginName]interface{}
 // parameters.
 type ServiceMap = map[PluginName]PluginParameters
 
+// SURBBundle facilitates garbage collection of subscriptions
+// by keeping track of the Epoch that the SURBs were received.
+type SURBBundle struct {
+	// Epoch is the epoch whence the SURBs were received.
+	Epoch uint64
+
+	// SURBs is one or more SURBs.
+	SURBs [][]byte
+}
+
 // PluginWorker implements the publish subscribe plugin worker.
 type PluginWorker struct {
 	sync.Mutex
@@ -118,7 +135,7 @@ type PluginWorker struct {
 	log  *logging.Logger
 
 	haltOnce      sync.Once
-	subscriptions *sync.Map // [SubscriptionIDLength]byte -> [][]byte (slice of SURBs)
+	subscriptions *sync.Map // [SubscriptionIDLength]byte -> *SURBBundle
 	pluginChans   PluginChans
 	clients       []*pubsubplugin.Client
 	forPKI        ServiceMap
@@ -158,7 +175,73 @@ func (k *PluginWorker) sendReply(surb, payload []byte) {
 	return
 }
 
-func (k *PluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient pubsubplugin.ServicePlugin) {
+func (k *PluginWorker) garbageCollect() {
+	k.log.Debug("Running garbage collection process.")
+	// [SubscriptionIDLength]byte -> *SURBBundle
+	surbsMapRange := func(rawSubscriptionID, rawSurbBundle interface{}) bool {
+		subscriptionID := rawSubscriptionID.([pubsubplugin.SubscriptionIDLength]byte)
+		surbBundle := rawSurbBundle.(*SURBBundle)
+
+		epoch, _, _ := epochtime.Now()
+		if epoch-surbBundle.Epoch >= 2 {
+			k.subscriptions.Delete(subscriptionID)
+		}
+		return true
+	}
+	k.subscriptions.Range(surbsMapRange)
+}
+
+func (k *PluginWorker) garbageCollectionWorker() {
+	timer := time.NewTimer(GarbageCollectionInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-k.HaltCh():
+			k.log.Debugf("Garbage collection worker terminating gracefully.")
+			return
+		case <-timer.C:
+			k.garbageCollect()
+			timer.Reset(GarbageCollectionInterval)
+		}
+	}
+}
+
+func (k *PluginWorker) appMessagesWorker(pluginClient pubsubplugin.ServicePlugin) {
+	appMessagesChan := pluginClient.GetNewAppMessagesChan()
+	for {
+		select {
+		case <-k.HaltCh():
+			return
+		case rawAppMessages := <-appMessagesChan:
+			appMessages, ok := rawAppMessages.(*pubsubplugin.NewAppMessages)
+			if !ok {
+				k.log.Error("Error, failed type assertion to *NewMessages")
+				continue
+			}
+			rawSURBs, ok := k.subscriptions.Load(appMessages.SubscriptionID)
+			if !ok {
+				k.log.Error("Error, failed load a subscription ID from sync.Map")
+				continue
+			}
+			surbBundle, ok := rawSURBs.(*SURBBundle)
+			if !ok {
+				k.log.Error("Error, failed type assertion for type *SURBBundle")
+				continue
+			}
+			messagesBlob, err := pubsubplugin.MessagesToBytes(appMessages.Messages)
+			if err != nil {
+				k.log.Errorf("Error, failed to encode app messages as CBOR blob: %s", err)
+				continue
+			}
+			surb := surbBundle.SURBs[0]
+			surbBundle.SURBs = surbBundle.SURBs[1:]
+			k.subscriptions.Store(appMessages.SubscriptionID, surbBundle)
+			k.sendReply(surb, messagesBlob)
+		}
+	}
+}
+
+func (k *PluginWorker) subscriptionWorker(recipient [sConstants.RecipientIDLength]byte, pluginClient pubsubplugin.ServicePlugin) {
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -173,38 +256,12 @@ func (k *PluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, plug
 	}
 	ch := handlerCh.Out()
 
-	appMessagesChan := pluginClient.GetNewAppMessagesChan()
 	for {
 		var pkt *packet.Packet
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
 			return
-		case rawAppMessages := <-appMessagesChan:
-			appMessages, ok := rawAppMessages.(*pubsubplugin.NewAppMessages)
-			if !ok {
-				k.log.Error("Error, failed type assertion to *NewMessages")
-				continue
-			}
-			rawSURBs, ok := k.subscriptions.Load(appMessages.SubscriptionID)
-			if !ok {
-				k.log.Error("Error, failed load a subscription ID from sync.Map")
-				continue
-			}
-			surbs, ok := rawSURBs.([][]byte)
-			if !ok {
-				k.log.Error("Error, failed type assertion to SURBs of type [][]byte")
-				continue
-			}
-			messagesBlob, err := pubsubplugin.MessagesToBytes(appMessages.Messages)
-			if err != nil {
-				k.log.Errorf("Error, failed to encode app messages as CBOR blob: %s", err)
-				continue
-			}
-			surb := surbs[0]
-			surbs = surbs[1:]
-			k.subscriptions.Store(appMessages.SubscriptionID, surbs)
-			k.sendReply(surb, messagesBlob)
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
@@ -248,10 +305,13 @@ func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient pubsubplug
 		pubsubRequestsDropped.Inc()
 		return
 	}
-
 	subscriptionID := pubsubplugin.GenerateSubscriptionID()
-	k.subscriptions.Store(subscriptionID, surbs)
-
+	epoch, _, _ := epochtime.Now()
+	surbBundle := &SURBBundle{
+		Epoch: epoch,
+		SURBs: surbs,
+	}
+	k.subscriptions.Store(subscriptionID, surbBundle)
 	err = pluginClient.OnSubscribe(&pubsubplugin.Subscribe{
 		PacketID:       pkt.ID,
 		SURBCount:      uint8(len(surbs)),
@@ -295,6 +355,8 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 		forPKI:        make(ServiceMap),
 		subscriptions: new(sync.Map),
 	}
+
+	pluginWorker.Go(pluginWorker.garbageCollectionWorker)
 
 	capaMap := make(map[string]bool)
 
@@ -354,6 +416,10 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 				return nil, err
 			}
 
+			pluginWorker.Go(func() {
+				pluginWorker.appMessagesWorker(pluginClient)
+			})
+
 			if !gotParams {
 				// just once we call the Parameters method on the plugin
 				// and use that info to populate our forPKI map which
@@ -371,10 +437,10 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 			// Accumulate a list of all clients to facilitate clean shutdown.
 			pluginWorker.clients = append(pluginWorker.clients, pluginClient)
 
-			// Start the workers _after_ we have added all of the entries to pluginChans
-			// otherwise the worker() goroutines race this thread.
+			// Start the subscriptionWorker _after_ we have added all of the entries to pluginChans
+			// otherwise the subscriptionWorker() goroutines race this thread.
 			defer pluginWorker.Go(func() {
-				pluginWorker.worker(endpoint, pluginClient)
+				pluginWorker.subscriptionWorker(endpoint, pluginClient)
 			})
 		}
 
