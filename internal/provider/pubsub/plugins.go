@@ -207,15 +207,15 @@ func (k *PluginWorker) garbageCollectionWorker() {
 }
 
 func (k *PluginWorker) appMessagesWorker(pluginClient pubsubplugin.ServicePlugin) {
-	appMessagesChan := pluginClient.GetNewAppMessagesChan()
+	appMessagesChan := pluginClient.GetAppMessagesChan()
 	for {
 		select {
 		case <-k.HaltCh():
 			return
 		case rawAppMessages := <-appMessagesChan:
-			appMessages, ok := rawAppMessages.(*pubsubplugin.NewAppMessages)
+			appMessages, ok := rawAppMessages.(*pubsubplugin.AppMessages)
 			if !ok {
-				k.log.Error("Error, failed type assertion to *NewMessages")
+				k.log.Error("Error, failed type assertion to *AppMessages")
 				continue
 			}
 			rawSURBs, ok := k.subscriptions.Load(appMessages.SubscriptionID)

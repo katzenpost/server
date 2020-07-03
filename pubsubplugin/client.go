@@ -79,20 +79,29 @@ type Subscribe struct {
 	LastSpoolIndex uint64
 }
 
+// SubscribeToBytes encodes the given Subscribe as a CBOR byte blob.
+func (s *Subscribe) ToBytes() ([]byte, error) {
+	serializedSubscribe, err := cbor.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return serializedSubscribe, nil
+}
+
+func SubscribeFromBytes(b []byte) (*Subscribe, error) {
+	subscribe := Subscribe{}
+	err := cbor.Unmarshal(b, &subscribe)
+	if err != nil {
+		return nil, err
+	}
+	return &subscribe, nil
+}
+
 // GenerateSubscriptionID returns a random subscription ID.
 func GenerateSubscriptionID() [SubscriptionIDLength]byte {
 	id := [SubscriptionIDLength]byte{}
 	rand.Reader.Read(id[:])
 	return id
-}
-
-// SubscribeToBytes encodes the given Subscribe as a CBOR byte blob.
-func SubscribeToBytes(subscribe *Subscribe) ([]byte, error) {
-	serializedSubscribe, err := cbor.Marshal(subscribe)
-	if err != nil {
-		return nil, err
-	}
-	return serializedSubscribe, nil
 }
 
 // ClientSubscribe is used by the mixnet client to send a subscription
@@ -120,14 +129,24 @@ func ClientSubscribeFromBytes(b []byte) (*ClientSubscribe, error) {
 	return &clientSubscribe, nil
 }
 
-// NewAppMessages is the struct type used by the application plugin to
+// AppMessages is the struct type used by the application plugin to
 // send new messages to the server and eventually the subscribing client.
-type NewAppMessages struct {
+type AppMessages struct {
 	// SubscriptionID is the server generated subscription identity.
 	SubscriptionID [SubscriptionIDLength]byte
 
 	// Messages should contain one or more spool messages.
 	Messages []SpoolMessage
+}
+
+// ToBytes serializes AppMessages into a CBOR byte blob
+// or returns an error.
+func (m *AppMessages) ToBytes() ([]byte, error) {
+	serialized, err := cbor.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
 }
 
 // MessagesToBytes returns a CBOR byte blob given a slice of type SpoolMessage.
@@ -139,10 +158,10 @@ func MessagesToBytes(messages []SpoolMessage) ([]byte, error) {
 	return serialized, nil
 }
 
-// NewAppMessagesFromBytes decodes the given CBOR byte blob
-// into a NewAppMessages or returns an error.
-func NewAppMessagesFromBytes(b []byte) (*NewAppMessages, error) {
-	newMessages := NewAppMessages{}
+// AppMessagesFromBytes decodes the given CBOR byte blob
+// into a AppMessages or returns an error.
+func AppMessagesFromBytes(b []byte) (*AppMessages, error) {
+	newMessages := AppMessages{}
 	err := cbor.Unmarshal(b, &newMessages)
 	if err != nil {
 		return nil, err
@@ -221,9 +240,9 @@ type ServicePlugin interface {
 	// a subscription request designated for a particular plugin agent.
 	OnSubscribe(*Subscribe) error
 
-	// GetNewAppMessagesChan returns an readonly channel where the
+	// GetAppMessagesChan returns an readonly channel where the
 	// application messages will be written to.
-	GetNewAppMessagesChan() <-chan interface{}
+	GetAppMessagesChan() <-chan interface{}
 
 	// Parameters returns the agent's paramenters for publication in
 	// the Provider's descriptor.
@@ -273,7 +292,7 @@ func (c *Client) Start(command string, args []string) error {
 	return nil
 }
 
-func (c *Client) readNewAppMessages() (*NewAppMessages, error) {
+func (c *Client) readAppMessages() (*AppMessages, error) {
 	lenPrefixBuf := make([]byte, 2)
 	_, err := io.ReadFull(c.conn, lenPrefixBuf)
 	if err != nil {
@@ -285,24 +304,28 @@ func (c *Client) readNewAppMessages() (*NewAppMessages, error) {
 	if err != nil {
 		return nil, err
 	}
-	newMessages, err := NewAppMessagesFromBytes(responseBuf)
+	newMessages, err := AppMessagesFromBytes(responseBuf)
 	if err != nil {
 		return nil, err
 	}
 	return newMessages, nil
 }
 
-func (c *Client) perpetualReader() <-chan NewAppMessages {
-	readCh := make(chan NewAppMessages)
+func (c *Client) perpetualReader() <-chan AppMessages {
+	readCh := make(chan AppMessages)
 
 	c.Go(func() {
 		for {
-			newMessages, err := c.readNewAppMessages()
+			newMessages, err := c.readAppMessages()
 			if err != nil {
 				c.log.Errorf("failure to read new messages from plugin: %s", err)
 				c.Halt()
 			}
-			readCh <- *newMessages
+			select {
+			case <-c.HaltCh():
+				return
+			case readCh <- *newMessages:
+			}
 		}
 	})
 
@@ -328,9 +351,9 @@ func (c *Client) worker() {
 	}
 }
 
-// GetNewAppMessagesChan returns an readonly channel where the
+// GetAppMessagesChan returns an readonly channel where the
 // application messages will be written to.
-func (c *Client) GetNewAppMessagesChan() <-chan interface{} {
+func (c *Client) GetAppMessagesChan() <-chan interface{} {
 	return c.newMessagesCh.Out()
 }
 
@@ -431,7 +454,7 @@ func (c *Client) launch(command string, args []string) error {
 // OnSubscribe send a subscription request to the plugin using our
 // length prefixed CBOR over Unix domain socket protocol.
 func (c *Client) OnSubscribe(subscribe *Subscribe) error {
-	serializedSubscribe, err := SubscribeToBytes(subscribe)
+	serializedSubscribe, err := subscribe.ToBytes()
 	if err != nil {
 		return err
 	}
