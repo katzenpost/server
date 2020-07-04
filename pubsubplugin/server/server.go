@@ -27,7 +27,7 @@ import (
 
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/server/pubsubplugin"
+	"github.com/katzenpost/server/pubsubplugin/common"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -40,7 +40,7 @@ type Server struct {
 	listener   net.Listener
 	socketFile string
 
-	appMessagesCh chan *pubsubplugin.AppMessages
+	appMessagesCh chan *common.AppMessages
 }
 
 func (s *Server) sendParameters(conn net.Conn) error {
@@ -49,19 +49,19 @@ func (s *Server) sendParameters(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
-	lenPrefix := pubsubplugin.PrefixLengthDecode(lenPrefixBuf)
+	lenPrefix := common.PrefixLengthDecode(lenPrefixBuf)
 	getParamsBuf := make([]byte, lenPrefix)
 	_, err = io.ReadFull(conn, getParamsBuf)
 	if err != nil {
 		return err
 	}
-	_, err = pubsubplugin.GetParametersFromBytes(getParamsBuf)
+	_, err = common.GetParametersFromBytes(getParamsBuf)
 	if err != nil {
 		return err
 	}
 
-	params := make(pubsubplugin.Parameters)
-	paramsBlob, err := pubsubplugin.ParametersToBytes(&params)
+	params := make(common.Parameters)
+	paramsBlob, err := common.ParametersToBytes(&params)
 	if err != nil {
 		return err
 	}
@@ -69,24 +69,24 @@ func (s *Server) sendParameters(conn net.Conn) error {
 	return err
 }
 
-func (s *Server) readSubscription(conn net.Conn) (*pubsubplugin.Subscribe, error) {
+func (s *Server) readSubscription(conn net.Conn) (*common.Subscribe, error) {
 	lenPrefixBuf := make([]byte, 2)
 	_, err := io.ReadFull(conn, lenPrefixBuf)
 	if err != nil {
 		return nil, err
 	}
-	lenPrefix := pubsubplugin.PrefixLengthDecode(lenPrefixBuf)
+	lenPrefix := common.PrefixLengthDecode(lenPrefixBuf)
 	subscribeBuf := make([]byte, lenPrefix)
 	_, err = io.ReadFull(conn, subscribeBuf)
 	if err != nil {
 		return nil, err
 	}
-	subscribe, err := pubsubplugin.SubscribeFromBytes(subscribeBuf)
+	subscribe, err := common.SubscribeFromBytes(subscribeBuf)
 	return subscribe, err
 }
 
-func (s *Server) perpetualSubscribeReader(conn net.Conn) <-chan *pubsubplugin.Subscribe {
-	readCh := make(chan *pubsubplugin.Subscribe)
+func (s *Server) perpetualSubscribeReader(conn net.Conn) <-chan *common.Subscribe {
+	readCh := make(chan *common.Subscribe)
 
 	s.Go(func() {
 		for {
@@ -134,7 +134,7 @@ func (s *Server) worker() {
 				s.log.Errorf("failed to deserialized AppMessages: %s", err)
 				continue
 			}
-			messagesBlob = pubsubplugin.PrefixLengthEncode(messagesBlob)
+			messagesBlob = common.PrefixLengthEncode(messagesBlob)
 			_, err = conn.Write(messagesBlob)
 			if err != nil {
 				s.log.Errorf("failed to write AppMessages to socket: %s", err)
@@ -182,7 +182,7 @@ func (s *Server) ensureLogDir(logDir string) error {
 func New(name, socketFile, logDir, logLevel string) (*Server, error) {
 	s := &Server{
 		socketFile:    socketFile,
-		appMessagesCh: make(chan *pubsubplugin.AppMessages),
+		appMessagesCh: make(chan *common.AppMessages),
 	}
 	err := s.ensureLogDir(logDir)
 	if err != nil {

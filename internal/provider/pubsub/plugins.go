@@ -31,7 +31,8 @@ import (
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
-	"github.com/katzenpost/server/pubsubplugin"
+	"github.com/katzenpost/server/pubsubplugin/client"
+	"github.com/katzenpost/server/pubsubplugin/common"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
@@ -137,7 +138,7 @@ type PluginWorker struct {
 	haltOnce      sync.Once
 	subscriptions *sync.Map // [SubscriptionIDLength]byte -> *SURBBundle
 	pluginChans   PluginChans
-	clients       []*pubsubplugin.Client
+	clients       []*client.Client
 	forPKI        ServiceMap
 }
 
@@ -179,7 +180,7 @@ func (k *PluginWorker) garbageCollect() {
 	k.log.Debug("Running garbage collection process.")
 	// [SubscriptionIDLength]byte -> *SURBBundle
 	surbsMapRange := func(rawSubscriptionID, rawSurbBundle interface{}) bool {
-		subscriptionID := rawSubscriptionID.([pubsubplugin.SubscriptionIDLength]byte)
+		subscriptionID := rawSubscriptionID.([common.SubscriptionIDLength]byte)
 		surbBundle := rawSurbBundle.(*SURBBundle)
 
 		epoch, _, _ := epochtime.Now()
@@ -206,14 +207,14 @@ func (k *PluginWorker) garbageCollectionWorker() {
 	}
 }
 
-func (k *PluginWorker) appMessagesWorker(pluginClient pubsubplugin.ServicePlugin) {
+func (k *PluginWorker) appMessagesWorker(pluginClient *client.Client) {
 	appMessagesChan := pluginClient.GetAppMessagesChan()
 	for {
 		select {
 		case <-k.HaltCh():
 			return
 		case rawAppMessages := <-appMessagesChan:
-			appMessages, ok := rawAppMessages.(*pubsubplugin.AppMessages)
+			appMessages, ok := rawAppMessages.(*common.AppMessages)
 			if !ok {
 				k.log.Error("Error, failed type assertion to *AppMessages")
 				continue
@@ -228,20 +229,24 @@ func (k *PluginWorker) appMessagesWorker(pluginClient pubsubplugin.ServicePlugin
 				k.log.Error("Error, failed type assertion for type *SURBBundle")
 				continue
 			}
-			messagesBlob, err := pubsubplugin.MessagesToBytes(appMessages.Messages)
+			messagesBlob, err := common.MessagesToBytes(appMessages.Messages)
 			if err != nil {
 				k.log.Errorf("Error, failed to encode app messages as CBOR blob: %s", err)
 				continue
 			}
 			surb := surbBundle.SURBs[0]
-			surbBundle.SURBs = surbBundle.SURBs[1:]
-			k.subscriptions.Store(appMessages.SubscriptionID, surbBundle)
+			if len(surbBundle.SURBs) == 1 {
+				k.subscriptions.Delete(appMessages.SubscriptionID)
+			} else {
+				surbBundle.SURBs = surbBundle.SURBs[1:]
+				k.subscriptions.Store(appMessages.SubscriptionID, surbBundle)
+			}
 			k.sendReply(surb, messagesBlob)
 		}
 	}
 }
 
-func (k *PluginWorker) subscriptionWorker(recipient [sConstants.RecipientIDLength]byte, pluginClient pubsubplugin.ServicePlugin) {
+func (k *PluginWorker) subscriptionWorker(recipient [sConstants.RecipientIDLength]byte, pluginClient *client.Client) {
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -283,7 +288,7 @@ func (k *PluginWorker) haltAllClients() {
 	}
 }
 
-func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient pubsubplugin.ServicePlugin) {
+func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient *client.Client) {
 	pubsubRequestsTimer = prometheus.NewTimer(pubsubRequestsDuration)
 	defer pubsubRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
@@ -299,20 +304,20 @@ func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient pubsubplug
 		pubsubRequestsDropped.Inc()
 		return
 	}
-	clientSubscribe, err := pubsubplugin.ClientSubscribeFromBytes(payload)
+	clientSubscribe, err := common.ClientSubscribeFromBytes(payload)
 	if err != nil {
 		k.log.Debugf("Failed to decode payload. Dropping Pubsub request: %v (%v)", pkt.ID, err)
 		pubsubRequestsDropped.Inc()
 		return
 	}
-	subscriptionID := pubsubplugin.GenerateSubscriptionID()
+	subscriptionID := common.GenerateSubscriptionID()
 	epoch, _, _ := epochtime.Now()
 	surbBundle := &SURBBundle{
 		Epoch: epoch,
 		SURBs: surbs,
 	}
 	k.subscriptions.Store(subscriptionID, surbBundle)
-	err = pluginClient.OnSubscribe(&pubsubplugin.Subscribe{
+	err = pluginClient.Subscribe(&common.Subscribe{
 		PacketID:       pkt.ID,
 		SURBCount:      uint8(len(surbs)),
 		SubscriptionID: subscriptionID,
@@ -337,9 +342,9 @@ func (k *PluginWorker) HasRecipient(recipient [sConstants.RecipientIDLength]byte
 	return ok
 }
 
-func (k *PluginWorker) launch(command string, args []string) (*pubsubplugin.Client, error) {
+func (k *PluginWorker) launch(command string, args []string) (*client.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := pubsubplugin.New(command, k.glue.LogBackend())
+	plugin := client.New(command, k.glue.LogBackend())
 	err := plugin.Start(command, args)
 	return plugin, err
 }
@@ -351,7 +356,7 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 		glue:          glue,
 		log:           glue.LogBackend().GetLogger("pubsub plugin worker"),
 		pluginChans:   make(PluginChans),
-		clients:       make([]*pubsubplugin.Client, 0),
+		clients:       make([]*client.Client, 0),
 		forPKI:        make(ServiceMap),
 		subscriptions: new(sync.Map),
 	}
