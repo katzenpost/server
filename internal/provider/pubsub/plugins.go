@@ -127,6 +127,21 @@ type SURBBundle struct {
 	SURBs [][]byte
 }
 
+func ensureEndpointSanitized(endpoint, capa string) error {
+	if endpoint == "" {
+		return fmt.Errorf("provider: Pubsub: '%v' provided no endpoint", capa)
+	} else if epNorm, err := precis.UsernameCaseMapped.String(endpoint); err != nil {
+		return fmt.Errorf("provider: Pubsub: '%v' invalid endpoint: %v", capa, err)
+	} else if epNorm != endpoint {
+		return fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, not normalized", capa)
+	}
+	rawEp := []byte(endpoint)
+	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
+		return fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, length out of bounds", capa)
+	}
+	return nil
+}
+
 // PluginWorker implements the publish subscribe plugin worker.
 type PluginWorker struct {
 	sync.Mutex
@@ -207,18 +222,13 @@ func (k *PluginWorker) garbageCollectionWorker() {
 	}
 }
 
-func (k *PluginWorker) appMessagesWorker(pluginClient *client.Client) {
-	appMessagesChan := pluginClient.GetAppMessagesChan()
+func (k *PluginWorker) appMessagesWorker(pluginClient *client.Client, conn net.Conn) {
+	appMessagesChan := pluginClient.StartWorker(conn)
 	for {
 		select {
 		case <-k.HaltCh():
 			return
-		case rawAppMessages := <-appMessagesChan:
-			appMessages, ok := rawAppMessages.(*common.AppMessages)
-			if !ok {
-				k.log.Error("Error, failed type assertion to *AppMessages")
-				continue
-			}
+		case appMessages := <-appMessagesChan:
 			rawSURBs, ok := k.subscriptions.Load(appMessages.SubscriptionID)
 			if !ok {
 				k.log.Error("Error, failed load a subscription ID from sync.Map")
@@ -345,7 +355,7 @@ func (k *PluginWorker) HasRecipient(recipient [sConstants.RecipientIDLength]byte
 func (k *PluginWorker) launch(command string, args []string) (*client.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
 	plugin := client.New(command, k.glue.LogBackend())
-	err := plugin.Start(command, args)
+	err := plugin.Launch(command, args)
 	return plugin, err
 }
 
@@ -382,16 +392,8 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 		}
 
 		// Sanitize the endpoint.
-		if pluginConf.Endpoint == "" {
-			return nil, fmt.Errorf("provider: Pubsub: '%v' provided no endpoint", capa)
-		} else if epNorm, err := precis.UsernameCaseMapped.String(pluginConf.Endpoint); err != nil {
-			return nil, fmt.Errorf("provider: Pubsub: '%v' invalid endpoint: %v", capa, err)
-		} else if epNorm != pluginConf.Endpoint {
-			return nil, fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, not normalized", capa)
-		}
-		rawEp := []byte(pluginConf.Endpoint)
-		if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
-			return nil, fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, length out of bounds", capa)
+		if err := ensureEndpointSanitized(pluginConf.Endpoint, capa); err != nil {
+			return nil, err
 		}
 
 		// Add an infinite channel for this plugin.
@@ -403,26 +405,32 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 		params := make(map[string]interface{})
 		gotParams := false
 
-		// Start the plugin clients.
-		for i := 0; i < pluginConf.MaxConcurrency; i++ {
-			pluginWorker.log.Noticef("Starting Pubsub plugin client: %s %d", capa, i)
+		pluginWorker.log.Noticef("Starting Pubsub plugin client: %s %d", capa, i)
 
-			var args []string
-			if len(pluginConf.Config) > 0 {
-				args = []string{}
-				for key, val := range pluginConf.Config {
-					args = append(args, fmt.Sprintf("-%s", key), val.(string))
-				}
+		var args []string
+		if len(pluginConf.Config) > 0 {
+			args = []string{}
+			for key, val := range pluginConf.Config {
+				args = append(args, fmt.Sprintf("-%s", key), val.(string))
 			}
+		}
 
-			pluginClient, err := pluginWorker.launch(pluginConf.Command, args)
+		pluginClient, err := pluginWorker.launch(pluginConf.Command, args)
+		if err != nil {
+			pluginWorker.log.Error("Failed to start a plugin client: %s", err)
+			return nil, err
+		}
+
+		for i := 0; i < pluginConf.MaxConcurrency; i++ {
+
+			conn, err := pluginClient.Dial()
 			if err != nil {
-				pluginWorker.log.Error("Failed to start a plugin client: %s", err)
+				pluginWorker.log.Error("Failed to dial a plugin client: %s", err)
 				return nil, err
 			}
 
 			pluginWorker.Go(func() {
-				pluginWorker.appMessagesWorker(pluginClient)
+				pluginWorker.appMessagesWorker(pluginClient, conn)
 			})
 
 			if !gotParams {

@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/pubsubplugin/common"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -43,47 +42,32 @@ const unixSocketNetwork = "unix"
 type Client struct {
 	worker.Worker
 
-	logBackend    *log.Backend
-	log           *logging.Logger
-	conn          net.Conn
-	cmd           *exec.Cmd
-	socketPath    string
-	params        *common.Parameters
-	newMessagesCh *channels.InfiniteChannel
+	logBackend *log.Backend
+	log        *logging.Logger
+
+	cmd        *exec.Cmd
+	socketPath string
+	params     *common.Parameters
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
 func New(command string, logBackend *log.Backend) *Client {
 	return &Client{
-		logBackend:    logBackend,
-		log:           logBackend.GetLogger(command),
-		conn:          nil,
-		newMessagesCh: channels.NewInfiniteChannel(),
+		logBackend: logBackend,
+		log:        logBackend.GetLogger(command),
 	}
 }
 
-// Start execs the plugin and starts a worker thread to listen
-// on the halt chan sends a TERM signal to the plugin if the shutdown
-// even is dispatched.
-func (c *Client) Start(command string, args []string) error {
-	err := c.launch(command, args)
-	if err != nil {
-		return err
-	}
-	c.Go(c.worker)
-	return nil
-}
-
-func (c *Client) readAppMessages() (*common.AppMessages, error) {
+func (c *Client) readAppMessages(conn net.Conn) (*common.AppMessages, error) {
 	lenPrefixBuf := make([]byte, 2)
-	_, err := io.ReadFull(c.conn, lenPrefixBuf)
+	_, err := io.ReadFull(conn, lenPrefixBuf)
 	if err != nil {
 		return nil, err
 	}
 	lenPrefix := common.PrefixLengthDecode(lenPrefixBuf)
 	responseBuf := make([]byte, lenPrefix)
-	_, err = io.ReadFull(c.conn, responseBuf)
+	_, err = io.ReadFull(conn, responseBuf)
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +78,21 @@ func (c *Client) readAppMessages() (*common.AppMessages, error) {
 	return newMessages, nil
 }
 
-func (c *Client) perpetualReader() <-chan common.AppMessages {
-	readCh := make(chan common.AppMessages)
+// StartWorker starts the client worker given a net.Conn and returns a
+// channel that new AppMessages can be read from.
+func (c *Client) StartWorker(conn net.Conn) <-chan *common.AppMessages {
+	readCh := make(chan *common.AppMessages)
 
 	c.Go(func() {
+		defer func() {
+			c.cmd.Process.Signal(syscall.SIGTERM)
+			err := c.cmd.Wait()
+			if err != nil {
+				c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
+			}
+		}()
 		for {
-			newMessages, err := c.readAppMessages()
+			newMessages, err := c.readAppMessages(conn)
 			if err != nil {
 				c.log.Errorf("failure to read new messages from plugin: %s", err)
 				c.Halt()
@@ -107,37 +100,12 @@ func (c *Client) perpetualReader() <-chan common.AppMessages {
 			select {
 			case <-c.HaltCh():
 				return
-			case readCh <- *newMessages:
+			case readCh <- newMessages:
 			}
 		}
 	})
 
 	return readCh
-}
-
-func (c *Client) worker() {
-	defer func() {
-		c.cmd.Process.Signal(syscall.SIGTERM)
-		err := c.cmd.Wait()
-		if err != nil {
-			c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
-		}
-	}()
-	readChan := c.perpetualReader()
-	for {
-		select {
-		case <-c.HaltCh():
-			return
-		case message := <-readChan:
-			c.newMessagesCh.In() <- message
-		}
-	}
-}
-
-// GetAppMessagesChan returns an readonly channel where the
-// application messages will be written to.
-func (c *Client) GetAppMessagesChan() <-chan interface{} {
-	return c.newMessagesCh.Out()
 }
 
 func (c *Client) logPluginStderr(stderr io.ReadCloser) {
@@ -149,44 +117,38 @@ func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 	c.Halt()
 }
 
-func (c *Client) setupUnixSocketClient(socketPath string) error {
-	var err error
-	c.conn, err = net.Dial(unixSocketNetwork, socketPath)
-	return err
-}
-
-func (c *Client) getParameters() (*common.Parameters, error) {
+func (c *Client) getParameters(conn net.Conn) error {
 	// write GetParameters "command"
 	rawGetParams, err := common.GetParametersToBytes()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	rawGetParams = common.PrefixLengthEncode(rawGetParams)
-	_, err = c.conn.Write(rawGetParams)
+	_, err = conn.Write(rawGetParams)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// read response
 	lenPrefixBuf := make([]byte, 2)
-	_, err = io.ReadFull(c.conn, lenPrefixBuf)
+	_, err = io.ReadFull(conn, lenPrefixBuf)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	lenPrefix := common.PrefixLengthDecode(lenPrefixBuf)
 	responseBuf := make([]byte, lenPrefix)
-	_, err = io.ReadFull(c.conn, responseBuf)
+	_, err = io.ReadFull(conn, responseBuf)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	responseParams, err := common.ParametersFromBytes(responseBuf)
+	c.params, err = common.ParametersFromBytes(responseBuf)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return responseParams, nil
+	return nil
 }
 
-func (c *Client) launch(command string, args []string) error {
+func (c *Client) Launch(command string, args []string) error {
 	// exec plugin
 	c.cmd = exec.Command(command, args...)
 	stdout, err := c.cmd.StdoutPipe()
@@ -215,23 +177,25 @@ func (c *Client) launch(command string, args []string) error {
 	stdoutScanner.Scan()
 	c.socketPath = stdoutScanner.Text()
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
-	err = c.setupUnixSocketClient(c.socketPath)
+	return nil
+}
+
+func (c *Client) Dial() (net.Conn, error) {
+	conn, err := net.Dial(unixSocketNetwork, c.socketPath)
 	if err != nil {
 		c.log.Debugf("unix socket connect failure: %s", err)
-		return err
+		return nil, err
 	}
-
-	// get plugin parameters if any
-	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
-	responseParams, err := c.getParameters()
-	if err != nil {
-		c.log.Debugf("failure to acquire plugin Parameters: %s", err)
-		c.Halt()
-		return err
+	if c.params == nil {
+		c.log.Debug("requesting plugin Parameters for Mix Descriptor publication")
+		err := c.getParameters(conn)
+		if err != nil {
+			c.log.Errorf("failure to acquire plugin Parameters: %s", err)
+			c.Halt()
+			return nil, err
+		}
 	}
-	c.params = responseParams
-	c.log.Debug("finished launching plugin.")
-	return nil
+	return conn, nil
 }
 
 func (c *Client) Unsubscribe(subscriptionID [common.SubscriptionIDLength]byte) error {
@@ -259,9 +223,8 @@ func (c *Client) Subscribe(subscribe *common.Subscribe) error {
 	return err
 }
 
-// GetParameters are used in Mix Descriptor publication to give
-// service clients more information about the service. Not
-// plugins will need to use this feature.
-func (c *Client) GetParameters() *common.Parameters {
+// Parameters returns the Parameters whcih are used in Mix Descriptor
+// publication to give service clients more information about the service.
+func (c *Client) Parameters() *common.Parameters {
 	return c.params
 }
