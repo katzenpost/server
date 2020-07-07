@@ -103,6 +103,7 @@ func (p *provider) Halt() {
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
+	p.pubsubPluginWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -765,12 +766,17 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	pubsubPluginWorker, err := pubsub.New(glue)
+	if err != nil {
+		return nil, err
+	}
 	p := &provider{
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
 		ch:                        channels.NewInfiniteChannel(),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
+		pubsubPluginWorker:        pubsubPluginWorker,
 	}
 
 	cfg := glue.Config()

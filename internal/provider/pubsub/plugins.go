@@ -127,24 +127,25 @@ type SURBBundle struct {
 	SURBs [][]byte
 }
 
-func ensureEndpointSanitized(endpoint, capa string) error {
-	if endpoint == "" {
-		return fmt.Errorf("provider: Pubsub: '%v' provided no endpoint", capa)
-	} else if epNorm, err := precis.UsernameCaseMapped.String(endpoint); err != nil {
-		return fmt.Errorf("provider: Pubsub: '%v' invalid endpoint: %v", capa, err)
-	} else if epNorm != endpoint {
-		return fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, not normalized", capa)
+func ensureEndpointSanitized(endpointStr, capa string) (*[sConstants.RecipientIDLength]byte, error) {
+	if endpointStr == "" {
+		return nil, fmt.Errorf("provider: Pubsub: '%v' provided no endpoint", capa)
+	} else if epNorm, err := precis.UsernameCaseMapped.String(endpointStr); err != nil {
+		return nil, fmt.Errorf("provider: Pubsub: '%v' invalid endpoint: %v", capa, err)
+	} else if epNorm != endpointStr {
+		return nil, fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, not normalized", capa)
 	}
-	rawEp := []byte(endpoint)
+	rawEp := []byte(endpointStr)
 	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
-		return fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, length out of bounds", capa)
+		return nil, fmt.Errorf("provider: Pubsub: '%v' invalid endpoint, length out of bounds", capa)
 	}
-	return nil
+	var endpoint [sConstants.RecipientIDLength]byte
+	copy(endpoint[:], rawEp)
+	return &endpoint, nil
 }
 
 // PluginWorker implements the publish subscribe plugin worker.
 type PluginWorker struct {
-	sync.Mutex
 	worker.Worker
 
 	glue glue.Glue
@@ -153,7 +154,7 @@ type PluginWorker struct {
 	haltOnce      sync.Once
 	subscriptions *sync.Map // [SubscriptionIDLength]byte -> *SURBBundle
 	pluginChans   PluginChans
-	clients       []*client.Client
+	clients       []*client.Dialer
 	forPKI        ServiceMap
 }
 
@@ -222,13 +223,12 @@ func (k *PluginWorker) garbageCollectionWorker() {
 	}
 }
 
-func (k *PluginWorker) appMessagesWorker(pluginClient *client.Client, conn net.Conn) {
-	appMessagesChan := pluginClient.StartWorker(conn)
+func (k *PluginWorker) appMessagesWorker(pluginClient *client.Dialer) {
 	for {
 		select {
 		case <-k.HaltCh():
 			return
-		case appMessages := <-appMessagesChan:
+		case appMessages := <-pluginClient.IncomingCh():
 			rawSURBs, ok := k.subscriptions.Load(appMessages.SubscriptionID)
 			if !ok {
 				k.log.Error("Error, failed load a subscription ID from sync.Map")
@@ -246,6 +246,7 @@ func (k *PluginWorker) appMessagesWorker(pluginClient *client.Client, conn net.C
 			}
 			surb := surbBundle.SURBs[0]
 			if len(surbBundle.SURBs) == 1 {
+				k.log.Debug("Using last SURB in subscription.")
 				k.subscriptions.Delete(appMessages.SubscriptionID)
 			} else {
 				surbBundle.SURBs = surbBundle.SURBs[1:]
@@ -256,7 +257,7 @@ func (k *PluginWorker) appMessagesWorker(pluginClient *client.Client, conn net.C
 	}
 }
 
-func (k *PluginWorker) subscriptionWorker(recipient [sConstants.RecipientIDLength]byte, pluginClient *client.Client) {
+func (k *PluginWorker) subscriptionWorker(recipient [sConstants.RecipientIDLength]byte, pluginClient *client.Dialer) {
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -298,7 +299,7 @@ func (k *PluginWorker) haltAllClients() {
 	}
 }
 
-func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient *client.Client) {
+func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient *client.Dialer) {
 	pubsubRequestsTimer = prometheus.NewTimer(pubsubRequestsDuration)
 	defer pubsubRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
@@ -327,13 +328,14 @@ func (k *PluginWorker) processPacket(pkt *packet.Packet, pluginClient *client.Cl
 		SURBs: surbs,
 	}
 	k.subscriptions.Store(subscriptionID, surbBundle)
-	err = pluginClient.Subscribe(&common.Subscribe{
+	subscription := &common.Subscribe{
 		PacketID:       pkt.ID,
 		SURBCount:      uint8(len(surbs)),
 		SubscriptionID: subscriptionID,
 		SpoolID:        clientSubscribe.SpoolID,
 		LastSpoolIndex: clientSubscribe.LastSpoolIndex,
-	})
+	}
+	pluginClient.Subscribe(subscription)
 	if err != nil {
 		k.log.Debugf("Failed to handle Pubsub request: %v (%v)", pkt.ID, err)
 		return
@@ -352,21 +354,21 @@ func (k *PluginWorker) HasRecipient(recipient [sConstants.RecipientIDLength]byte
 	return ok
 }
 
-func (k *PluginWorker) launch(command string, args []string) (*client.Client, error) {
+func (k *PluginWorker) launch(command string, args []string) (*client.Dialer, error) {
 	k.log.Debugf("Launching plugin: %s", command)
 	plugin := client.New(command, k.glue.LogBackend())
 	err := plugin.Launch(command, args)
 	return plugin, err
 }
 
-// NewPluginWorker returns a new PluginWorker
-func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
+// New returns a new PluginWorker
+func New(glue glue.Glue) (*PluginWorker, error) {
 
 	pluginWorker := PluginWorker{
 		glue:          glue,
 		log:           glue.LogBackend().GetLogger("pubsub plugin worker"),
 		pluginChans:   make(PluginChans),
-		clients:       make([]*client.Client, 0),
+		clients:       make([]*client.Dialer, 0),
 		forPKI:        make(ServiceMap),
 		subscriptions: new(sync.Map),
 	}
@@ -375,7 +377,7 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 
 	capaMap := make(map[string]bool)
 
-	for _, pluginConf := range glue.Config().Provider.PubsubPlugin {
+	for i, pluginConf := range glue.Config().Provider.PubsubPlugin {
 		pluginWorker.log.Noticef("Configuring plugin handler for %s", pluginConf.Capability)
 
 		// Ensure no duplicates.
@@ -392,14 +394,14 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 		}
 
 		// Sanitize the endpoint.
-		if err := ensureEndpointSanitized(pluginConf.Endpoint, capa); err != nil {
+		endpoint, err := ensureEndpointSanitized(pluginConf.Endpoint, capa)
+		if err != nil {
 			return nil, err
 		}
 
 		// Add an infinite channel for this plugin.
-		var endpoint [sConstants.RecipientIDLength]byte
-		copy(endpoint[:], rawEp)
-		pluginWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
+
+		pluginWorker.pluginChans[*endpoint] = channels.NewInfiniteChannel()
 
 		// Add entry from this plugin for the PKI.
 		params := make(map[string]interface{})
@@ -422,22 +424,21 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 		}
 
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
-
-			conn, err := pluginClient.Dial()
+			err := pluginClient.Dial()
 			if err != nil {
 				pluginWorker.log.Error("Failed to dial a plugin client: %s", err)
 				return nil, err
 			}
 
 			pluginWorker.Go(func() {
-				pluginWorker.appMessagesWorker(pluginClient, conn)
+				pluginWorker.appMessagesWorker(pluginClient)
 			})
 
 			if !gotParams {
 				// just once we call the Parameters method on the plugin
 				// and use that info to populate our forPKI map which
 				// ends up populating the PKI document
-				p := pluginClient.GetParameters()
+				p := pluginClient.Parameters()
 				if p != nil {
 					for key, value := range *p {
 						params[key] = value
@@ -453,7 +454,7 @@ func NewPluginWorker(glue glue.Glue) (*PluginWorker, error) {
 			// Start the subscriptionWorker _after_ we have added all of the entries to pluginChans
 			// otherwise the subscriptionWorker() goroutines race this thread.
 			defer pluginWorker.Go(func() {
-				pluginWorker.subscriptionWorker(endpoint, pluginClient)
+				pluginWorker.subscriptionWorker(*endpoint, pluginClient)
 			})
 		}
 
