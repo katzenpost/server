@@ -21,6 +21,7 @@ package common
 
 import (
 	"encoding/binary"
+	"errors"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/crypto/rand"
@@ -49,11 +50,20 @@ func PrefixLengthDecode(b []byte) uint16 {
 	return binary.BigEndian.Uint16(b[:2])
 }
 
+// SubscriptionID is a subscription identity.
+type SubscriptionID [SubscriptionIDLength]byte
+
+// SpoolID is a spool identity.
+type SpoolID [SpoolIDLength]byte
+
 // Unsubscribe is used by the mix server to communicate an unsubscribe to
 // the plugin.
 type Unsubscribe struct {
 	// SubscriptionID is the server generated subscription identity.
-	SubscriptionID [SubscriptionIDLength]byte
+	SubscriptionID SubscriptionID
+
+	// SpoolID is the spool identity.
+	SpoolID SpoolID
 }
 
 // ToBytes returns a CBOR serialized Unsubscribe.
@@ -75,10 +85,10 @@ type Subscribe struct {
 	SURBCount uint8
 
 	// SubscriptionID is the server generated subscription identity.
-	SubscriptionID [SubscriptionIDLength]byte
+	SubscriptionID SubscriptionID
 
 	// SpoolID is the spool identity.
-	SpoolID [SpoolIDLength]byte
+	SpoolID SpoolID
 
 	// LastSpoolIndex is the last spool index which was received by the client.
 	LastSpoolIndex uint64
@@ -155,26 +165,6 @@ func (m *AppMessages) ToBytes() ([]byte, error) {
 	return serialized, nil
 }
 
-// MessagesToBytes returns a CBOR byte blob given a slice of type SpoolMessage.
-func MessagesToBytes(messages []SpoolMessage) ([]byte, error) {
-	serialized, err := cbor.Marshal(messages)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
-}
-
-// AppMessagesFromBytes decodes the given CBOR byte blob
-// into a AppMessages or returns an error.
-func AppMessagesFromBytes(b []byte) (*AppMessages, error) {
-	newMessages := AppMessages{}
-	err := cbor.Unmarshal(b, &newMessages)
-	if err != nil {
-		return nil, err
-	}
-	return &newMessages, nil
-}
-
 // SpoolMessage is a spool message from the application plugin.
 type SpoolMessage struct {
 	// Index is the index value from whence the message came from.
@@ -185,6 +175,15 @@ type SpoolMessage struct {
 	Payload []byte
 }
 
+// MessagesToBytes returns a CBOR byte blob given a slice of type SpoolMessage.
+func MessagesToBytes(messages []SpoolMessage) ([]byte, error) {
+	serialized, err := cbor.Marshal(messages)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
 // Parameters is an optional mapping that plugins can publish, these get
 // advertised to clients in the MixDescriptor.
 // The output of GetParameters() ends up being published in a map
@@ -193,46 +192,112 @@ type SpoolMessage struct {
 // https://github.com/katzenpost/core/blob/master/pki/pki.go
 type Parameters map[string]string
 
-// ParametersFromBytes returns Parameters given a CBOR byte blob.
-// Otherwise an error is returned.
-func ParametersFromBytes(b []byte) (*Parameters, error) {
-	params := make(Parameters)
-	err := cbor.Unmarshal(b, &params)
-	if err != nil {
-		return nil, err
-	}
-	return &params, nil
-}
-
-// ParametersToBytes returns a CBOR byte blob given a *Parameters.
-func ParametersToBytes(params *Parameters) ([]byte, error) {
-	rawParams, err := cbor.Marshal(params)
-	if err != nil {
-		return nil, err
-	}
-	return rawParams, nil
-}
-
 // GetParameters is used for querying the plugin over the unix socket
 // to get the dynamic parameters after the plugin is started.
 type GetParameters struct{}
 
-// GetParametersFromBytes returns a *GetParameters given a CBOR byte blob
-// or an error.
-func GetParametersFromBytes(b []byte) (*GetParameters, error) {
-	getParams := GetParameters{}
-	err := cbor.Unmarshal(b, &getParams)
-	if err != nil {
-		return nil, err
-	}
-	return &getParams, nil
+// IngressUnixSocketCommand wraps ingress unix socket wire protocol commands,
+// that is commands used by the mix server, aka Provider to communicate with
+// the application plugin.
+type IngressUnixSocketCommand struct {
+	// GetParameters is used to retrieve the plugin parameters which
+	// can be dynamically selected by the plugin on startup.
+	GetParameters *GetParameters
+
+	// Subscribe is used to establish a new SURB based subscription.
+	Subscribe *Subscribe
+
+	// Unsubscribe is used to tear down an existing subscription.
+	Unsubscribe *Unsubscribe
 }
 
-// GetParametersToBytes returns the CBOR representation of GetParameters.
-func GetParametersToBytes() ([]byte, error) {
-	rawGetParams, err := cbor.Marshal(&GetParameters{})
+func (i *IngressUnixSocketCommand) validate() error {
+	notNilCount := 0
+	if i.GetParameters != nil {
+		notNilCount += 1
+	}
+	if i.Subscribe != nil {
+		notNilCount += 1
+	}
+	if i.Unsubscribe != nil {
+		notNilCount += 1
+	}
+	if notNilCount > 1 {
+		return errors.New("expected only one field to not be nil")
+	}
+	return nil
+}
+
+// ToBytes serializes IngressUnixSocketCommand into a CBOR byte blob
+// or returns an error.
+func (i *IngressUnixSocketCommand) ToBytes() ([]byte, error) {
+	err := i.validate()
 	if err != nil {
 		return nil, err
 	}
-	return rawGetParams, nil
+	serialized, err := cbor.Marshal(i)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+func IngressUnixSocketCommandFromBytes(b []byte) (*IngressUnixSocketCommand, error) {
+	ingressCmds := &IngressUnixSocketCommand{}
+	err := cbor.Unmarshal(b, ingressCmds)
+	if err != nil {
+		return nil, err
+	}
+	err = ingressCmds.validate()
+	if err != nil {
+		return nil, err
+	}
+	return ingressCmds, nil
+}
+
+// EgressUnixSocketCommand wraps egress unix socket wire protocol commands,
+// that is commands used by the application plugin to communicate with the
+// mix server, aka Provider.
+type EgressUnixSocketCommand struct {
+	// Parameters is the plugin selected parameters which can be dynamically
+	// select at startup.
+	Parameters *Parameters
+
+	// AppMessages contain the application messages from the plugin.
+	AppMessages *AppMessages
+}
+
+func (e *EgressUnixSocketCommand) validate() error {
+	if e.Parameters != nil && e.AppMessages != nil {
+		return errors.New("expected only one field to not be nil")
+	}
+	return nil
+}
+
+// ToBytes serializes EgressUnixSocketCommand into a CBOR byte blob
+// or returns an error.
+func (e *EgressUnixSocketCommand) ToBytes() ([]byte, error) {
+	err := e.validate()
+	if err != nil {
+		return nil, err
+	}
+	serialized, err := cbor.Marshal(e)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+// EgressUnixSocketCommandFromBytes decodes a blob into a EgressUnixSocketCommand.
+func EgressUnixSocketCommandFromBytes(b []byte) (*EgressUnixSocketCommand, error) {
+	egressCmds := &EgressUnixSocketCommand{}
+	err := cbor.Unmarshal(b, egressCmds)
+	if err != nil {
+		return nil, err
+	}
+	err = egressCmds.validate()
+	if err != nil {
+		return nil, err
+	}
+	return egressCmds, nil
 }

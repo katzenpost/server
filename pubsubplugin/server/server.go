@@ -17,6 +17,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,6 +32,68 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+// Spool is an interface for spool implementations which
+// will handle publishing new spool content to spool subscribers.
+type Spool interface {
+	// Subscribe creates a new spool subscription.
+	Subscribe(subscriptionID *common.SubscriptionID, spoolID *common.SpoolID, lastSpoolIndex uint64) error
+
+	// Unsubscribe removes an existing spool subscription.
+	Unsubscribe(subscriptionID *common.SubscriptionID) error
+}
+
+// Config is used to configure a new Server instance.
+type Config struct {
+	// Name is the name of the application service.
+	Name string
+
+	// Parameters are the application service specified parameters which are advertized in the
+	// Katzenpost PKI document.
+	Parameters *common.Parameters
+
+	// LogDir is the logging directory.
+	LogDir string
+
+	// LogLevel is the log level and is set to one of: ERROR, WARNING, NOTICE, INFO, DEBUG, CRITICAL.
+	LogLevel string
+
+	// Spool is the implementation of our Spool interface.
+	Spool Spool
+
+	// AppMessagesCh is the application messages channel which is used by the application to send
+	// messages to the mix server for transit over the mix network to the destination client.
+	AppMessagesCh chan *common.AppMessages
+}
+
+// ValidateConfig is used to minimally validate a given Config.
+func ValidateConfig(config *Config) error {
+	if config == nil {
+		return errors.New("config must not be nil")
+	}
+	if config.Name == "" {
+		return errors.New("config.Name must not be empty")
+	}
+	if config.Parameters == nil {
+		return errors.New("config.Parameters must not be nil")
+	}
+	if config.LogDir == "" {
+		return errors.New("config.LogDir must not be empty")
+	}
+	if config.LogLevel == "" {
+		return errors.New("config.LogLevel must not be empty")
+	}
+	if config.Spool == nil {
+		return errors.New("config.Spool must not be nil")
+	}
+	if config.AppMessagesCh == nil {
+		return errors.New("config.AppMessagesCh must not be nil")
+	}
+	return nil
+}
+
+// Server is used by applications to implement the application plugin which listens
+// for connections from the mix server over a unix domain socket. Server handles the
+// management of this unix domain socket as well as the wire protocol used.
 type Server struct {
 	worker.Worker
 
@@ -40,65 +103,54 @@ type Server struct {
 	listener   net.Listener
 	socketFile string
 
+	params        *common.Parameters
 	appMessagesCh chan *common.AppMessages
+	spool         Spool
 }
 
 func (s *Server) sendParameters(conn net.Conn) error {
-	lenPrefixBuf := make([]byte, 2)
-	_, err := io.ReadFull(conn, lenPrefixBuf)
+	e := &common.EgressUnixSocketCommand{
+		Parameters: s.params,
+	}
+	paramsBlob, err := e.ToBytes()
 	if err != nil {
 		return err
 	}
-	lenPrefix := common.PrefixLengthDecode(lenPrefixBuf)
-	getParamsBuf := make([]byte, lenPrefix)
-	_, err = io.ReadFull(conn, getParamsBuf)
-	if err != nil {
-		return err
-	}
-	_, err = common.GetParametersFromBytes(getParamsBuf)
-	if err != nil {
-		return err
-	}
-
-	params := make(common.Parameters)
-	paramsBlob, err := common.ParametersToBytes(&params)
-	if err != nil {
-		return err
-	}
+	paramsBlob = common.PrefixLengthEncode(paramsBlob)
 	_, err = conn.Write(paramsBlob)
 	return err
 }
 
-func (s *Server) readSubscription(conn net.Conn) (*common.Subscribe, error) {
+func (s *Server) readIngressCommands(conn net.Conn) (*common.IngressUnixSocketCommand, error) {
 	lenPrefixBuf := make([]byte, 2)
 	_, err := io.ReadFull(conn, lenPrefixBuf)
 	if err != nil {
 		return nil, err
 	}
 	lenPrefix := common.PrefixLengthDecode(lenPrefixBuf)
-	subscribeBuf := make([]byte, lenPrefix)
-	_, err = io.ReadFull(conn, subscribeBuf)
+	cmdBuf := make([]byte, lenPrefix)
+	_, err = io.ReadFull(conn, cmdBuf)
 	if err != nil {
 		return nil, err
 	}
-	subscribe, err := common.SubscribeFromBytes(subscribeBuf)
-	return subscribe, err
+	ingressCmd, err := common.IngressUnixSocketCommandFromBytes(cmdBuf)
+	return ingressCmd, err
 }
 
-func (s *Server) perpetualSubscribeReader(conn net.Conn) <-chan *common.Subscribe {
-	readCh := make(chan *common.Subscribe)
+func (s *Server) perpetualCommandReader(conn net.Conn) <-chan *common.IngressUnixSocketCommand {
+	readCh := make(chan *common.IngressUnixSocketCommand)
 
 	s.Go(func() {
 		for {
-			subscription, err := s.readSubscription(conn)
+			cmd, err := s.readIngressCommands(conn)
 			if err != nil {
 				s.log.Errorf("failure to read new messages from plugin: %s", err)
-				s.Halt()
+				return
 			}
 			select {
 			case <-s.HaltCh():
 				return
-			case readCh <- subscription:
+			case readCh <- cmd:
 			}
 		}
 	})
@@ -106,32 +158,34 @@ func (s *Server) perpetualSubscribeReader(conn net.Conn) <-chan *common.Subscrib
 	return readCh
 }
 
-func (s *Server) worker() {
-	conn, err := s.listener.Accept()
-	if err != nil {
-		s.log.Errorf("error accepting connection: %s", err)
-		return
-	}
-	err = s.sendParameters(conn)
-	if err != nil {
-		s.log.Errorf("error sending Parameters: %s", err)
-		return
-	}
-
-	readSubscribeCh := s.perpetualSubscribeReader(conn)
+func (s *Server) connectionWorker(conn net.Conn) {
+	readCmdCh := s.perpetualCommandReader(conn)
 
 	for {
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Worker terminating gracefully.")
 			return
-		case _ = <-readSubscribeCh:
-			// XXX FIXME; do something useful with the subscribe request
-
+		case cmd := <-readCmdCh:
+			if cmd.GetParameters != nil {
+				s.sendParameters(conn)
+				continue
+			}
+			if cmd.Subscribe != nil {
+				s.spool.Subscribe(&cmd.Subscribe.SubscriptionID, &cmd.Subscribe.SpoolID, cmd.Subscribe.LastSpoolIndex)
+				continue
+			}
+			if cmd.Unsubscribe != nil {
+				s.spool.Unsubscribe(&cmd.Subscribe.SubscriptionID)
+				continue
+			}
 		case messages := <-s.appMessagesCh:
-			messagesBlob, err := messages.ToBytes()
+			e := &common.EgressUnixSocketCommand{
+				AppMessages: messages,
+			}
+			messagesBlob, err := e.ToBytes()
 			if err != nil {
-				s.log.Errorf("failed to deserialized AppMessages: %s", err)
+				s.log.Errorf("failed to serialize app messages: %s", err)
 				continue
 			}
 			messagesBlob = common.PrefixLengthEncode(messagesBlob)
@@ -142,6 +196,17 @@ func (s *Server) worker() {
 			}
 		}
 	}
+}
+
+func (s *Server) worker() {
+	conn, err := s.listener.Accept()
+	if err != nil {
+		s.log.Errorf("error accepting connection: %s", err)
+		return
+	}
+	s.Go(func() {
+		s.connectionWorker(conn)
+	})
 }
 
 func (s *Server) setupListener(name string) error {
@@ -179,22 +244,28 @@ func (s *Server) ensureLogDir(logDir string) error {
 	return nil
 }
 
-func New(name, socketFile, logDir, logLevel string) (*Server, error) {
-	s := &Server{
-		socketFile:    socketFile,
-		appMessagesCh: make(chan *common.AppMessages),
-	}
-	err := s.ensureLogDir(logDir)
+// New creates a new Server instance and starts immediately listening for new connections.
+func New(config *Config) (*Server, error) {
+	err := ValidateConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	logFile := path.Join(logDir, fmt.Sprintf("%s.%d.log", name, os.Getpid()))
-	err = s.initLogging(name, logFile, logLevel)
+	s := &Server{
+		params:        config.Parameters,
+		appMessagesCh: config.AppMessagesCh,
+		spool:         config.Spool,
+	}
+	err = s.ensureLogDir(config.LogDir)
+	if err != nil {
+		return nil, err
+	}
+	logFile := path.Join(config.LogDir, fmt.Sprintf("%s.%d.log", config.Name, os.Getpid()))
+	err = s.initLogging(config.Name, logFile, config.LogLevel)
 	if err != nil {
 		return nil, err
 	}
 	s.log.Debug("starting listener")
-	err = s.setupListener(name)
+	err = s.setupListener(config.Name)
 	if err != nil {
 		return nil, err
 	}

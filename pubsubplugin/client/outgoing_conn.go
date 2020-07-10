@@ -20,6 +20,7 @@
 package client
 
 import (
+	"errors"
 	"io"
 	"net"
 
@@ -57,11 +58,14 @@ func (c *outgoingConn) readAppMessages() (*common.AppMessages, error) {
 	if err != nil {
 		return nil, err
 	}
-	newMessages, err := common.AppMessagesFromBytes(responseBuf)
+	egressCmd, err := common.EgressUnixSocketCommandFromBytes(responseBuf)
 	if err != nil {
 		return nil, err
 	}
-	return newMessages, nil
+	if egressCmd.AppMessages == nil {
+		return nil, errors.New("expected EgressUnixSocketCommand AppMessages to not be nil")
+	}
+	return egressCmd.AppMessages, nil
 }
 
 func (c *outgoingConn) unsubscribe(u *common.Unsubscribe) {
@@ -117,8 +121,10 @@ func (c *outgoingConn) worker() {
 }
 
 func (c *outgoingConn) getParameters() (*common.Parameters, error) {
-	// write GetParameters "command"
-	rawGetParams, err := common.GetParametersToBytes()
+	ingressCmd := &common.IngressUnixSocketCommand{
+		GetParameters: &common.GetParameters{},
+	}
+	rawGetParams, err := ingressCmd.ToBytes()
 	if err != nil {
 		return nil, err
 	}
@@ -140,5 +146,13 @@ func (c *outgoingConn) getParameters() (*common.Parameters, error) {
 	if err != nil {
 		return nil, err
 	}
-	return common.ParametersFromBytes(responseBuf)
+
+	egressCmd, err := common.EgressUnixSocketCommandFromBytes(responseBuf)
+	if err != nil {
+		return nil, err
+	}
+	if egressCmd.Parameters == nil {
+		return nil, errors.New("expected EgressUnixSocketCommand Parameters to not be nil")
+	}
+	return egressCmd.Parameters, nil
 }
