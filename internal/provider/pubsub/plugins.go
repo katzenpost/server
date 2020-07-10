@@ -248,6 +248,7 @@ func (k *PluginWorker) appMessagesWorker(pluginClient *client.Dialer) {
 			if len(surbBundle.SURBs) == 1 {
 				k.log.Debug("Using last SURB in subscription.")
 				k.subscriptions.Delete(appMessages.SubscriptionID)
+				pluginClient.Unsubscribe(appMessages.SubscriptionID)
 			} else {
 				surbBundle.SURBs = surbBundle.SURBs[1:]
 				k.subscriptions.Store(appMessages.SubscriptionID, surbBundle)

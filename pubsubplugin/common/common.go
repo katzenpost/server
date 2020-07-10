@@ -61,9 +61,6 @@ type SpoolID [SpoolIDLength]byte
 type Unsubscribe struct {
 	// SubscriptionID is the server generated subscription identity.
 	SubscriptionID SubscriptionID
-
-	// SpoolID is the spool identity.
-	SpoolID SpoolID
 }
 
 // ToBytes returns a CBOR serialized Unsubscribe.
