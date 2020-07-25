@@ -146,7 +146,7 @@ func ClientSubscribeFromBytes(b []byte) (*ClientSubscribe, error) {
 // send new messages to the server and eventually the subscribing client.
 type AppMessages struct {
 	// SubscriptionID is the server generated subscription identity.
-	SubscriptionID [SubscriptionIDLength]byte
+	SubscriptionID SubscriptionID
 
 	// Messages should contain one or more spool messages.
 	Messages []SpoolMessage
