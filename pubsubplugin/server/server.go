@@ -65,8 +65,7 @@ type Config struct {
 	AppMessagesCh chan *common.AppMessages
 }
 
-// ValidateConfig is used to minimally validate a given Config.
-func ValidateConfig(config *Config) error {
+func validateConfig(config *Config) error {
 	if config == nil {
 		return errors.New("config must not be nil")
 	}
@@ -246,7 +245,7 @@ func (s *Server) ensureLogDir(logDir string) error {
 
 // New creates a new Server instance and starts immediately listening for new connections.
 func New(config *Config) (*Server, error) {
-	err := ValidateConfig(config)
+	err := validateConfig(config)
 	if err != nil {
 		return nil, err
 	}
