@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/provider/kaetzchen"
+	"github.com/katzenpost/server/internal/provider/pubsub"
 	"github.com/katzenpost/server/internal/sqldb"
 	"github.com/katzenpost/server/registration"
 	"github.com/katzenpost/server/spool"
@@ -75,6 +76,7 @@ type provider struct {
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
+	pubsubPluginWorker        *pubsub.PluginWorker
 
 	httpServers []*http.Server
 }
@@ -101,6 +103,7 @@ func (p *provider) Halt() {
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
+	p.pubsubPluginWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -254,9 +257,22 @@ func (p *provider) worker() {
 				packetsDropped.Inc()
 				pkt.Dispose()
 			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// Note that we pass ownership of pkt to p.cborPluginKaetzchenWorker
 				// which will take care to dispose of it.
 				p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
+			}
+			continue
+		}
+
+		if p.pubsubPluginWorker.HasRecipient(pkt.Recipient.ID) {
+			if pkt.IsSURBReply() {
+				p.log.Debugf("Dropping packet: %v (SURB-Reply for pubsub service)", pkt.ID)
+				packetsDropped.Inc()
+				pkt.Dispose()
+			} else {
+				// Note that we pass ownership of pkt to p.pubsubPluginWorker
+				// which will take care to dispose of it.
+				p.pubsubPluginWorker.OnSubscribeRequest(pkt)
 			}
 			continue
 		}
@@ -306,21 +322,25 @@ func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 }
 
 func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	ct, surbs, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 		packetsDropped.Inc()
 		return
 	}
-
 	// Store the ciphertext in the spool.
 	if err := p.spool.StoreMessage(recipient, ct); err != nil {
 		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.ID, err)
 		return
 	}
-
+	if len(surbs) > 1 {
+		p.log.Debugf("Multi-SURB packet sent to user recipient, dropping packet: %v (%v)", pkt.ID, err)
+		packetsDropped.Inc()
+		return
+	}
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
-	if surb != nil {
+	if len(surbs) == 1 {
+		surb := surbs[0]
 		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
@@ -746,12 +766,17 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	pubsubPluginWorker, err := pubsub.New(glue)
+	if err != nil {
+		return nil, err
+	}
 	p := &provider{
 		glue:                      glue,
 		log:                       glue.LogBackend().GetLogger("provider"),
 		ch:                        channels.NewInfiniteChannel(),
 		kaetzchenWorker:           kaetzchenWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
+		pubsubPluginWorker:        pubsubPluginWorker,
 	}
 
 	cfg := glue.Config()
