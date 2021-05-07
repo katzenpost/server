@@ -40,7 +40,7 @@ const (
 	replayBucket   = "replay"
 	metadataBucket = "metadata"
 
-	writeBackInterval = 10 * time.Second
+	writeBackInterval = 600 * time.Second
 	writeBackSize     = 4096 // TODO/perf: Tune this.
 
 	// TagLength is the replay tag length in bytes.
