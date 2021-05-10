@@ -221,11 +221,11 @@ func (k *MixKey) worker() {
 
 func (k *MixKey) doFlush(forceFlush bool) {
 	k.Lock()
-	defer k.Unlock()
 
 	// Accumulate up to writeBackSize entries.
 	nEntries := len(k.writeBack)
 	if nEntries == 0 || (!forceFlush && nEntries < writeBackSize) {
+		k.Unlock()
 		return
 	}
 
