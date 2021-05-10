@@ -40,8 +40,12 @@ const (
 	replayBucket   = "replay"
 	metadataBucket = "metadata"
 
-	writeBackInterval = 600 * time.Second
-	writeBackSize     = 4096 // TODO/perf: Tune this.
+	// Note: maximum at 1gbit ~ 10**9*60 / 2*1024*8  ~ 3.6 *10**6
+	// Or, approximately 100MB a minute of tags
+	// TODO: check that the replayBucket is dropped after the epoch has rotated
+
+	writeBackInterval = 60 * time.Second
+	writeBackSize     = 131072 // TODO/perf: Tune this.
 
 	// TagLength is the replay tag length in bytes.
 	TagLength = sha512.Size256
@@ -196,6 +200,7 @@ func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) (bool, bool) {
 }
 
 func (k *MixKey) worker() {
+	// XXX: will not actually flush entries if nEntries < writeBackSize
 	defer k.doFlush(true)
 
 	ticker := time.NewTicker(writeBackInterval)
@@ -224,16 +229,18 @@ func (k *MixKey) doFlush(forceFlush bool) {
 		return
 	}
 
+	writeBack := k.writeBack
+	k.writeBack = make(map[[TagLength]byte]bool)
+	k.Unlock()
 	if err := k.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(replayBucket))
-		for tag := range k.writeBack {
+		for tag := range writeBack {
 			testAndSetTagDB(bkt, tag[:])
 		}
 		return nil
 	}); err != nil {
 		panic("BUG: mixkey: Failed to flush write-back cache: " + err.Error())
 	}
-	k.writeBack = make(map[[TagLength]byte]bool)
 }
 
 // Deref reduces the refcount by one, and closes the key if the refcount hits
