@@ -6,7 +6,7 @@ git.schwanenlied.me/yawning/bloom.git v0.0.0-20181019144233-44d6c5c71ed1 h1:xhmJ
 git.schwanenlied.me/yawning/bloom.git v0.0.0-20181019144233-44d6c5c71ed1/go.mod h1:GZ84cORdAXx9o+gao9zDUCKlMCFcNVditnz/4FCpdnk=
 git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6 h1:zOrl5/RvK48MxMrif6Z+/OpuYyRnvB+ZTrQWEV9VYb0=
 git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6/go.mod h1:BWqTsj8PgcPriQJGl7el20J/7TuT1d/hSyFDXMEpoEo=
-git.schwanenlied.me/yawning/chacha20 v0.0.0-20170904085104-e3b1f968fc63/go.mod h1:T3xLJAhSIr+VG/0xD/5oFTBcfOExfdTlF0yB3EpXea4=
+git.schwanenlied.me/yawning/chacha20.git v0.0.0-20170904085104-e3b1f968fc63/go.mod h1:T3xLJAhSIr+VG/0xD/5oFTBcfOExfdTlF0yB3EpXea4=
 git.schwanenlied.me/yawning/chacha20.git v0.0.0-20170904085104-e3b1f968fc63/go.mod h1:NYi4Ifd1g/YbhIDgDfw6t7QdsW4tofQWMX/+FiDtJWs=
 git.schwanenlied.me/yawning/newhope.git v0.0.0-20170622154529-9598792ba8f2/go.mod h1:weMqACFGzJs4Ni+K9shsRd02N4LkDrtGlkRxISK+II0=
 github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
